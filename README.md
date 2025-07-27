@@ -7,6 +7,11 @@ This project has some tools that necessart for a web spider. Uses a redis databa
 <tr><td>1</td><td>ip4 address</td><td>2.41.5.1</td><td>org.example</td><td>gathered ip4 address</td></tr>
 </table>
 
+# start redis-server with
+```shell
+node server.js
+```
+
 ## dig-domain
 
 last argument of process is a domain name. Tool will be extract other domains from it's name and dns queries / reverse lookups.
