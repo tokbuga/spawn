@@ -1,4 +1,3 @@
-import { readFileSync } from "fs"
 import { createClient } from "redis";
 import {
     lookup, 
@@ -14,11 +13,7 @@ import {
     resolveTxt 
 } from 'node:dns/promises';
 
-const tld_list_basic = readFileSync("refdb/tld-list-basic.txt").toString().split(/\s/).filter(Boolean);
-
-if (process.argv.includes("DEBUG") === false) {
-    console.debug = function(){}
-}
+import * as helpers from "./helpers.js"
 
 const domain_db = await createClient("redis://127.0.0.1:6379")
   .on("error", (err) => console.debug("Redis Client Error", err))
@@ -32,132 +27,6 @@ const address_db = await createClient("redis://127.0.0.1:6379")
 
 await address_db.select(1);
 
-const isIPAddress = function ( domain ) {
-    return domain.match(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/) !== null;
-}
-
-const hasExtension = function (domain) {
-    return domain.split(".").find(isExtension) && domain.includes(".");
-}
-
-const isDomainName = function ( domain ) {
-    return !isIPAddress(domain) && hasExtension(domain);
-}
-
-const reverseDomain = function (domain) {
-    return domain.split(".").filter(Boolean).reverse().join(".");
-}
-
-const extensionOf = function ( domain ) {
-    console.debug(`extensionOf -> ${domain}`);
-
-    const cleared_domain_name = clearDomain(domain);
-    console.debug(`extensionOf -> clearDomain(${domain}) -> ${cleared_domain_name}`);
-
-    const rev_parts = cleared_domain_name.split(".").reverse();
-    console.debug(`extensionOf -> rev_parts(${domain}) -> `, rev_parts);
-    
-    let last_extension_until_not_one = 0;
-    let length_of_rev_parts = rev_parts.length;
-
-    while (length_of_rev_parts--) {
-        console.debug(`extensionOf -> while(length_of_rev_parts--) -> `, length_of_rev_parts);
-        
-        const rev_part_i = last_extension_until_not_one++;
-        console.debug(`extensionOf -> while(length_of_rev_parts--) -> rev_part_i -> `, rev_part_i);
-
-        const rev_part_at_i = rev_parts.at(rev_part_i);
-        console.debug(`extensionOf -> while(length_of_rev_parts--) -> rev_part_at_i(${rev_part_i}) -> `, rev_part_at_i);
-        
-        const is_extension = isExtension( rev_part_at_i ); 
-        console.debug(`extensionOf -> while(length_of_rev_parts--) -> isExtension(${rev_part_at_i}) -> `, is_extension);
-        
-        if (is_extension) {
-            continue;
-        }
-
-        const final_result = rev_parts.slice( 0, last_extension_until_not_one-1 ).reverse().join(".");
-        console.debug(`extensionOf -> while(length_of_rev_parts--) -> final_result -> `, final_result);
-
-        return final_result;
-    }
-
-    console.debug(`extensionOf -> WHILE_ENDED_WITHOUT_SUCCESS !!`);
-
-    return "";
-}
-
-const rootDomainOf = function ( domain ) {
-    console.debug(`rootDomainOf -> ${domain}`);
-    
-    const extension = extensionOf(domain);
-    console.debug(`rootDomainOf -> extensionOf(${domain}) -> ${extension}`);
-    
-    const e_index = domain.lastIndexOf(extension);
-    console.debug(`rootDomainOf -> lastIndexOf(${extension}) -> ${e_index}`);
-    
-    if (e_index === -1) {
-        return domain
-    }
-
-    const final_result = domain.substring(0, e_index-1).split(".").pop() + "." + extension;
-    console.debug(`rootDomainOf -> final_result -> ${final_result}`);
-
-    return final_result;
-}
-
-const isExtension = function ( domain ) {
-    return tld_list_basic.indexOf( domain ) !== -1;
-}
-
-const clearDomain = function ( domain ) {
-    if (!domain) {
-        return "";
-    }
-
-    let indexOf_proto = domain.indexOf("://");
-    if (indexOf_proto !== -1) {
-        domain = domain.substring( indexOf_proto + 3 );
-    }
-
-    let indexOf_port = domain.indexOf(":");
-    if (indexOf_port !== -1) {
-        domain = domain.substring( 0, indexOf_port );
-    }
-
-    let indexOf_url = domain.indexOf("/", indexOf_proto + 3);
-    if (indexOf_url !== -1) {
-        domain = domain.substring( 0, indexOf_url );
-    }
-
-    return domain;
-}
-
-const extractDomains = function ( ...domains ) {
-    return [ ...domains ].flat().map(domain => {
-        console.debug(`extractDomains -> ${domain}`);
-    
-        const cleared_domain_name = clearDomain( domain );    
-        console.debug(`extractDomains -> clearDomain(${domain}) -> ${cleared_domain_name}`);
-        
-        const root_domain_name = rootDomainOf(cleared_domain_name);
-        console.debug(`extractDomains -> rootDomainOf(${cleared_domain_name}) -> ${root_domain_name}`);
-        
-        const extended_from_root = domain.substring(0, domain.lastIndexOf(root_domain_name)-1);
-        console.debug(`extractDomains -> extended_from_root -> ${extended_from_root}`);
-        
-        const final_result = extended_from_root
-            .split(".")
-            .map((n,i,t) => `${t.slice(i).join(".")}.${root_domain_name}`)
-            .concat(root_domain_name)
-            .map(d => d.split(".").filter(Boolean).join("."));
-
-        console.debug(`extractDomains -> final_result -> `, final_result);
-    
-        return final_result;
-
-    }).flat().filter((d,i,t) => t.lastIndexOf(d) === i).sort((a,b) => a.length - b.length);
-}
 
 const reverseDNS = async function (domain) {
     try {
@@ -271,43 +140,42 @@ const ipsOfDomain = async function (domain) {
     return [];
 }
 
-const domain = reverseDomain(process.argv.findLast(isDomainName));
+const domain = helpers.reverseDomain(process.argv.findLast(isDomainName));
 
-if (!extensionOf(domain)) {
+if (!helpers.extensionOf(domain)) {
     process.exit(1);
 }
 
-const root_domain = rootDomainOf(domain);
+const root_domain = helpers.rootDomainOf(domain);
 
-let domains   =  extractDomains(await domainsOfDNS(domain));
+let domains   = helpers.extractDomains(await domainsOfDNS(domain));
 let addresses = (await Promise.all(domains.map(ipsOfDomain))).flat();
 let ipdomains = (await Promise.all(addresses.map(reverseDNS))).flat();
 domains.push.apply(domains, ipdomains)
 
-domains = extractDomains(domains);
+domains = helpers.extractDomains(domains);
 addresses = addresses.filter((d,i,t) => t.lastIndexOf(d) === i).sort();
 
 let i, checkExists;
 
 i = domains.length;
 while (i--) {
-    const domain = reverseDomain(domains[i]);
+    const domain = helpers.reverseDomain(domains[i]);
 
     checkExists = await domain_db.EXISTS(domain);
     if (checkExists === 0) {
         console.debug(`domain(${domain}) not exisits, adding to db`)
-        await domain_db.SET(domain, reverseDomain(root_domain));
+        await domain_db.SET(domain, helpers.reverseDomain(root_domain));
     }
 }
 
 i = addresses.length;
 while (i--) {
     const address = addresses[i];
-
     checkExists = await address_db.EXISTS(address);
     if (checkExists === 0) {
         console.debug(`address(${address}) not exisits, adding to db`)
-        await address_db.SET(address, reverseDomain(root_domain));
+        await address_db.SET(address, helpers.reverseDomain(root_domain));
     }
 }
 

@@ -21,3 +21,11 @@ last argument of process is a domain name. Tool will be extract other domains fr
 ```shell
 node dig-domain.js org.example
 ```
+
+## dig-url
+
+last argument of process is a url. Tool will be extract other domains and target urls.
+
+```shell
+node dig-url.js http://wikipedia.org
+```
