@@ -10,3 +10,7 @@ This project has some tools that necessart for a web spider. Uses a redis databa
 ## dig-domain
 
 last argument of process is a domain name. Tool will be extract other domains from it's name and dns queries / reverse lookups.
+
+```shell
+node dig-domain.js org.example
+```

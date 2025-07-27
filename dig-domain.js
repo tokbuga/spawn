@@ -271,11 +271,12 @@ const ipsOfDomain = async function (domain) {
     return [];
 }
 
-const domain = process.argv.findLast(isDomainName);
+const domain = reverseDomain(process.argv.findLast(isDomainName));
 
 if (!extensionOf(domain)) {
     process.exit(1);
 }
+
 const root_domain = rootDomainOf(domain);
 
 let domains   =  extractDomains(await domainsOfDNS(domain));
