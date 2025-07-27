@@ -8,6 +8,8 @@ This project has some tools that necessart for a web spider. Uses a redis databa
 </table>
 
 # start redis-server with
+You need to start redis-server (if you has not already) with another terminal window. This process will raise redis database service (at 127.0.0.1:6379 without password) to save function results. You can use any redis UI to see those recors like Redis Insight.
+
 ```shell
 node server.js
 ```
