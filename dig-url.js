@@ -1,5 +1,6 @@
 import { createClient } from "redis";
 import * as helpers from "./helpers.js"
+import { TYPE, addTask } from "./helpers.js"
 
 
 const domain_db = await createClient("redis://127.0.0.1:6379")
@@ -48,14 +49,18 @@ const url_list = makeup_removeds
     .filter( helpers.filterUnique )
     ;
 
-const domains = url_list.map( helpers.domainOfURL ).filter( helpers.filterUnique );
+const domain_list = url_list.map( helpers.domainOfURL ).filter( helpers.filterUnique );
 
 
+addTask( TYPE.TASK_ADD_URL_LIST, url_list );
+addTask( TYPE.TASK_ADD_DOMAIN_LIST, domain_list );
+
+/* 
 let i;
-
 i = url_list.length;
 while (i--) {
     const checkExists = await url_db.EXISTS(url_list[i]);
+
     if (checkExists === 0) {
         console.log(`url( ${url_list[i]} ) adding to db`)
         await url_db.SET(url_list[i], url);
@@ -74,3 +79,4 @@ while (i--) {
         await domain_db.SET(domain_name, root_domain);
     }
 }
+ */

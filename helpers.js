@@ -1,10 +1,193 @@
-import { readFileSync } from "fs"
+import { readFileSync } from "fs" 
+
+export const isNavigator = "undefined" === typeof process;
+export const isWebWorker = "undefined" === typeof window;
+export const isDevice    = "undefined" !== typeof process;
+
+
+export const DefaultWebSocketPort = 2415;
+export const DefaultWebSocketHost = "127.0.0.1";
+
+if ("undefined" === typeof origin) {
+    global.origin = `http://${DefaultWebSocketHost}:${DefaultWebSocketPort}`
+}
+
+const [ 
+    OriginProtocolName, 
+    OriginDomainName,
+    OriginPort = OriginProtocolName.endsWith("s") && 443 || 80,
+    OriginHost = OriginDomainName,
+    OriginProtocol = `${OriginProtocolName}://`, 
+] = (origin).split(/[\/|\:]+/);
+
+export const WebSocketServerOptions = Object.defineProperties({
+    port     : DefaultWebSocketPort,
+    uuid     : "",
+    host     : OriginHost,
+    protocol : OriginProtocol.replace("http", "ws")
+}, {
+    path     : { 
+        enumerable: true,
+        get : function () { return `/${this.uuid}` },
+        set : function (v) { return this.uuid = v.substring(1) || "" },
+    },
+    url     : { 
+        enumerable: true,
+        get : function () { return `${target.protocol}${target.host}:${target.port}/${target.uuid}`; },
+        set : function (v) { return this.parse(v) },
+    },
+    parse    : {
+        enumerable  : false,
+        value       : function ( url, target ) {
+            const {
+                hostname: host, port, pathname: path
+            } = new URL( url );
+
+            return this.default({
+                host, port, path
+            }, target);
+        }
+    },
+    default  : {
+        enumerable  : false,
+        value       : function ( options = {}, target = options ) {
+            for (const key in this) { 
+                if (!target[key]) {
+                    try { target[key] = this[ key ]} 
+                        catch {}
+                }
+            }
+
+            try { target.url = `${target.protocol}${target.host}:${target.port}/${target.uuid}`; } catch {}
+
+            return target;
+        }
+    } 
+});
+
+if ( typeof process === "undefined" )
+    self.process = { argv: [] };
+
+export function toNumber ( any = this ) {
+    return `${any}`.split("")
+        .map(c => c.charCodeAt())
+        .map((c,i) => c * (i+1))
+        .reduce((a, b = 0) => a + b)
+    ;
+} 
+
+Reflect.defineProperty( Object.prototype, "toNumber", { value: toNumber } );
+
+export const task_channel = new BroadcastChannel("task");
+
+export const kUnique = Symbol("uid");
+
+export class Unique extends Number { 
+    static sym = kUnique; 
+    static map = new Map;
+
+    is (number) {
+        return !(this - number);
+    }
+};
+
+export const unique = {
+    for : new Proxy( Unique, {
+
+        set : function ( Super, keyName, keyCode ) {
+            const keyFunc = Function(`return class ${keyName} extends this {}`);
+            const keyClass = keyFunc.call(Super); 
+            const keyNumber = Reflect.construct( keyClass, [ keyCode ] );
+
+            Reflect.defineProperty( keyClass.prototype, "name", { value: keyName } );
+            Reflect.defineProperty( keyClass.prototype, "value", {  value: keyCode } );
+            Reflect.defineProperty( keyClass.prototype, Super.sym, { value: () => keyCode } );
+            Reflect.defineProperty( keyClass.prototype, Symbol.toPrimitive, { value: () => keyCode } );
+            
+            Super.map.set( keyName, keyNumber );
+            Super.map.set( keyCode, keyNumber );
+            Super.map.set( keyNumber, keyName );
+
+            Reflect.defineProperty( Super.map, keyName, { value: keyNumber } );
+            Reflect.defineProperty( Super.map, keyCode, { value: keyNumber } );
+
+            return keyNumber;
+        },
+
+        get : function ( Super, keyName ) {
+
+            if (Super.map.has( keyName ) === false) {
+                const keyCode = keyName.toNumber();
+    
+                const keyFunc = Function(`return class ${keyName} extends this {}`);
+                const keyClass = keyFunc.call(Super); 
+                const keyNumber = Reflect.construct( keyClass, [ keyCode ] );
+    
+                Reflect.defineProperty( keyClass.prototype, "name", { value: keyName } );
+                Reflect.defineProperty( keyClass.prototype, "value", {  value: keyCode } );
+                Reflect.defineProperty( keyClass.prototype, Super.sym, { value: () => keyCode } );
+                Reflect.defineProperty( keyClass.prototype, Symbol.toPrimitive, { value: () => keyCode } );
+                
+                Super.map.set( keyName, keyNumber );
+                Super.map.set( keyCode, keyNumber );
+                Super.map.set( keyNumber, keyName );
+
+                Reflect.defineProperty( Super.map, keyName, { value: keyNumber } );
+                Reflect.defineProperty( Super.map, keyCode, { value: keyNumber } );
+            }
+
+            return Super.map.get( keyName );
+        } 
+    })
+};
+unique.for.NULL = 0;
+unique.for.TASK_FETCH_URL;
+unique.for.TASK_ADD_URL;
+unique.for.TASK_ADD_URL_LIST;
+unique.for.TASK_ADD_DOMAIN;
+unique.for.TASK_ADD_DOMAIN_LIST;
+unique.for.BOOTP_DHCP_REQUEST;
+unique.for.BOOTP_DHCP_REPLY;
+unique.for.SERVICE_DHCP_DISCOVER;
+unique.for.SERVICE_DHCP_OFFER;
+unique.for.SERVICE_DHCP_REQUEST;
+unique.for.SERVICE_DHCP_ACK;
+unique.for.SERVICE_DHCP_NAK;
+unique.for.ERROR_ADDR_NOT_AVAILABLE;
+unique.for.STATE_PASSIVE;
+unique.for.STATE_ACTIVE;
+unique.for.STATE_WAITING;
+unique.for.STATE_CREATING;
+unique.for.STATE_ASSIGNING;
+unique.for.STATE_WORKING;
+unique.for.STATE_TRUE;
+unique.for.STATE_FALSE;
+unique.for.CABLE_STATE_CONNECTED;
+unique.for.LINK_STATE_OPENING;
+unique.for.LINK_STATE_OPEN;
+unique.for.LINK_STATE_CLOSED;
+unique.for.LINK_STATE_CLOSING;
+unique.for.EVENT_ONCONNECTION;
+unique.for.EVENT_ONMESSAGE;
+unique.for.EVENT_ONOPEN;
+unique.for.EVENT_ONOPENING;
+unique.for.DEVICE_ETH_WEBSOCKET_JS;
+unique.for.DEVICE_ETH_WEBSOCKETSERVER_NODEJS;
+unique.for.DEVICE_ETH_WEBSOCKETSERVER_CLIENT_NODEJS;
+unique.for.VALUE_NIC_HWADDR;
+unique.for.VALUE_LEASE_TIME;
+
+export const TYPE = Unique.map;
 
 if (process.argv.includes("DEBUG") === false) {
     console.debug = function(){}
 }
 
-const tld_list_basic = readFileSync("refdb/tld-list-basic.txt").toString().split(/\s/).filter(Boolean);
+const tld_list_basic = (await readFileSync("refdb/tld-list-basic.txt")).toString().split(/\s/).filter(Boolean);
+
+export function addTask ( type, data ) {
+    task_channel.postMessage({ type, data });
+}
 
 export function protocolOf (url) {
     return hasProtocol(url) && `${url.match(/(.*)\:\/\//).at(1)}` || "";
