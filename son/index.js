@@ -1,0 +1,1 @@
+WebAssembly.instantiateStreaming(fetch("os.wasm"), self).then(console.log)
