@@ -13,9 +13,13 @@
     (global $dev/ethernet<Instance>     mut extern)
     (global $dev/ethernet<Functions>    mut extern)
 
+    (global $dev/cpu<Module>            mut extern)
+    (global $dev/cpu<Instance>          mut extern)
+    (global $dev/cpu<Functions>         mut extern)
 
     (start $boot
         $init:memory()
+        $init:cpu()
         $init:ethernet()
     )
 
@@ -93,6 +97,38 @@
         )
     )
 
+
+    (func $init:cpu
+        (async 
+            (apply $self.WebAssembly.compile<ref>ref 
+                global($self.WebAssembly) 
+                (param global($wasm:cpu))
+            )
+            (then $onmodule     (param ref) (result ref) 
+                (global.set $dev/cpu<Module> this)
+                (call $instantiate<ref>ref this)
+            )
+            (then $oninstance   (param ref) (result ref) 
+                (global.set $dev/cpu<Instance> this)
+                (get <refx2>ref this text("exports"))
+            )
+            (then $onexports    (param ref) 
+                (global.set $dev/cpu<Functions> this)
+            )
+            (then $done
+                (warn<refx2>
+                    text("cpu:")
+                    (call $self.Array.of<refx3>ref 
+                        global($dev/cpu<Module>)
+                        global($dev/cpu<Instance>)
+                        global($dev/cpu<Functions>)
+                    )
+                )
+            )
+        )
+    )
+
+
     (func $instantiate<ref>ref
         (param $module ref)
         (result ref)
@@ -104,6 +140,7 @@
         )
     )
 
+    (data $wasm:cpu "wasm://cpu.wat")
     (data $wasm:memory "wasm://memory.wat")
     (data $wasm:ethernet "wasm://ethernet.wat")
 )
