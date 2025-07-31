@@ -14,11 +14,12 @@ import {
     create_eth_header,
     create_arp_packet,
     create_wsc_inform,
+    create_arp_announce,
 } from "./packet.js"
 
 import handlers from "./handle-client.js"
 
-const log = console.log
+const Log = console.log;
 
 const webSocket = new ws.WebSocket("ws://cen.net:2415");
 const wscObject = Object.defineProperties({}, {
@@ -43,21 +44,19 @@ const {
 } = handlers( wscObject );
 
 webSocket.on( "open", function () {
-    
     wscObject.cableState = "CABLE_CONNECTED";
-    log( "wsc open", wscObject )
+    Log( "wsc open", wscObject )
 
-    create_wsc_inform( this.smac, this.sip4 )
-        .send( this )
+    create_arp_announce( this.smac, this.sip4 ).send( this )
 
     this.on( "message", function (pkt) {
-        const hdr = ETHHeader *pkt;
-        log( "handling", this.link, hdr.type )
-
-        switch ( hdr.type ) {
+        ETHHeader *pkt;
+        Log( "handling", this.link, pkt.type )
+        
+        switch ( pkt.type ) {
             case ETHERTYPE_ETH : handle_eth( pkt ); return;
             case ETHERTYPE_ARP : handle_arp( pkt ); return;
-            default : log("ETHERTYPE_NA", hdr.type.hex(2))
+            default : Log("ETHERTYPE_NA", pkt.type.hex(2))
         }
     })
 })

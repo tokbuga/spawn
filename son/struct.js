@@ -1,43 +1,54 @@
-const begin = 12;
-let offset = begin;
-const buffers = {} 
+Object.defineProperties( Number.prototype, {
+    hex : { value: function (byteLength = 1) { 
+        return `0x` + this.toString(16).padStart(byteLength * 2, 0); 
+    }},
+})
 
 Object.defineProperties( Buffer.prototype, {
-    ptr : { 
-        configurable : true, 
-        get : function () {
-            Object.defineProperty( this, "ptr", { value : offset });
-            offset += this.byteLength;
-            return this.ptr;
-        } 
-    },
-
     send : {
         value : function ( sender ) {
             sender.send( this )
         }
+    },
+
+    [ Symbol.toPrimitive ] : {
+        value : function () {
+            Object.setPrototypeOf( this, Pointer.setPrototypeFrom.prototype );
+            return;
+        }
     }
 });
 
-export class Struct extends Buffer {
+export class Pointer extends Buffer {
 
     static from ( any ) {
-        return Object.setPrototypeOf( Buffer.from(any), this.prototype );
+        return Object.setPrototypeOf( super.from(any), this.prototype );
     }
 
-    static [ Symbol.toPrimitive ] () {
-        const type = this.prototype;
-        Reflect.defineProperty( Buffer.prototype, Symbol.toPrimitive, {
-            configurable : true, value : function () {
-                buffers[ this.ptr ] = Object.setPrototypeOf( this, type );
-                return this.ptr;
-            }
-        })
-        return 1;
+    static alloc ( any ) {
+        return Object.setPrototypeOf( super.alloc(any), this.prototype );
+    }
+    
+    slice () {
+        return Object.setPrototypeOf( super.slice.apply(this, arguments), this );
+    }
+
+    subarray () {
+        return Object.setPrototypeOf( super.subarray.apply(this, arguments), this );
+    }
+
+    //t0: ARPHeader --> primitive
+    static [ Symbol.toPrimitive ] () { 
+        Pointer.setPrototypeFrom = this; 
+    }
+
+    //t1: ptr --> primitive 
+    [ Symbol.toPrimitive ] () { 
+        Object.setPrototypeOf( this, Pointer.setPrototypeFrom.prototype ); 
     }
 } 
 
-export class ETHHeader extends Struct {
+export class ETHHeader extends Pointer {
     get dmac     () { return this.readUIntBE(0, 6);         }
     get smac     () { return this.readUIntBE(6, 6);         }
     get type     () { return this.readUInt16BE(12);         }
@@ -47,7 +58,7 @@ export class ETHHeader extends Struct {
     set type    (v) { return this.writeUInt16BE(v, 12);     }
 }
 
-export class WSCHeader extends Struct {
+export class WSCHeader extends Pointer {
     get mac      () { return this.readUIntBE(0, 6);         }
     get ip4      () { return this.readUInt32BE(6);          }
     get rsv      () { return this.readUInt16BE(10);         }
@@ -60,7 +71,7 @@ export class WSCHeader extends Struct {
 }
 
 
-export class IP4Header extends Struct {
+export class IP4Header extends Pointer {
     get ihl     ()  { return this.readUInt8(0);             }
     get tos     ()  { return this.readUInt8(1);             }
     get tlen    ()  { return this.readUInt16BE(2);          }
@@ -84,12 +95,12 @@ export class IP4Header extends Struct {
     set daddr   (v) { return this.writeUInt32BE(v, 16);     }
 }
 
-export class IP6Header extends Struct {
+export class IP6Header extends Pointer {
     get ihl      () { return this.readUInt8(0);             }
     set ihl     (v) { return this.writeUInt8(v, 0);         }
 }
 
-export class IPPacket extends Struct {
+export class IPPacket extends Pointer {
     get eth_dmac     () { return this.readUIntBE(0, 6);     }
     get eth_smac     () { return this.readUIntBE(6, 6);     }
     get eth_type     () { return this.readUInt16BE(12);     }
@@ -125,7 +136,7 @@ export class IPPacket extends Struct {
     get ip6      () { return IP6Header * this.subarray(14); }
 }
 
-export class ARPHeader extends Struct {
+export class ARPHeader extends Pointer {
     get htype       () { return this.readUInt16BE(0);       }
     get atype       () { return this.readUInt16BE(2);       }
     get maclen      () { return this.readUInt8(4);          }
@@ -147,7 +158,7 @@ export class ARPHeader extends Struct {
     set daddr       (v){ return this.writeUInt32BE(0, 24);  }
 }
 
-export class ARPPacket extends Struct {
+export class ARPPacket extends Pointer {
     get eth_dmac     () { return this.readUIntBE(0, 6);     }
     get eth_smac     () { return this.readUIntBE(6, 6);     }
     get eth_type     () { return this.readUInt16BE(12);     }
@@ -178,68 +189,15 @@ export class ARPPacket extends Struct {
 
     get eth () { return ETHHeader * this.subarray(0);       }
     get arp () { return ARPHeader * this.subarray(14);      }
+
+    get isAnnouncement () {
+        return (
+            (this.eth_dmac  === ADDR_MAC_BCAST) &&
+            (this.arp_dmac  === ADDR_MAC_ANY) &&
+            (this.arp_saddr === this.arp_daddr)
+        )
+    }
 }
-
-Object.defineProperties( Number.prototype, {
-    hex : { value: function (byteLength = 1) { return `0x` + this.toString(16).padStart(byteLength * 2, 0); } },
-
-    eth         : { get : function () { return buffers[this].eth; },            set : function (v) { return buffers[this].eth = v; } },
-    mac         : { get : function () { return buffers[this].mac; },            set : function (v) { return buffers[this].mac = v; } },
-    arp         : { get : function () { return buffers[this].arp; },            set : function (v) { return buffers[this].arp = v; } },
-    ip4         : { get : function () { return buffers[this].ip4; },            set : function (v) { return buffers[this].ip4 = v; } },
-    ip6         : { get : function () { return buffers[this].ip6; },            set : function (v) { return buffers[this].ip6 = v; } },
-
-    eth_dmac    : { get : function () { return buffers[this].eth_dmac; },       set : function (v) { return buffers[this].eth_dmac = v; } },
-    eth_smac    : { get : function () { return buffers[this].eth_smac; },       set : function (v) { return buffers[this].eth_smac = v; } },
-    eth_type    : { get : function () { return buffers[this].eth_type; },       set : function (v) { return buffers[this].eth_type = v; } },
-
-    dmac        : { get : function () { return buffers[this].dmac; },           set : function (v) { return buffers[this].dmac = v; } },
-    smac        : { get : function () { return buffers[this].smac; },           set : function (v) { return buffers[this].smac = v; } },
-    type        : { get : function () { return buffers[this].type; },           set : function (v) { return buffers[this].type = v; } },
-    
-    htype       : { get : function () { return buffers[this].htype; },          set : function (v) { return buffers[this].htype = v; } },
-    atype       : { get : function () { return buffers[this].atype; },          set : function (v) { return buffers[this].atype = v; } },
-    maclen      : { get : function () { return buffers[this].maclen; },         set : function (v) { return buffers[this].maclen = v; } },
-    addrlen     : { get : function () { return buffers[this].addrlen; },        set : function (v) { return buffers[this].addrlen = v; } },
-    opcode      : { get : function () { return buffers[this].opcode; },         set : function (v) { return buffers[this].opcode = v; } },
-    smac        : { get : function () { return buffers[this].smac; },           set : function (v) { return buffers[this].smac = v; } },
-    saddr       : { get : function () { return buffers[this].saddr; },          set : function (v) { return buffers[this].saddr = v; } },
-    dmac        : { get : function () { return buffers[this].dmac; },           set : function (v) { return buffers[this].dmac = v; } },
-    daddr       : { get : function () { return buffers[this].daddr; },          set : function (v) { return buffers[this].daddr = v; } },
-    
-    arp_htype   : { get : function () { return buffers[this].arp_htype; },      set : function (v) { return buffers[this].arp_htype = v; } },
-    arp_atype   : { get : function () { return buffers[this].arp_atype; },      set : function (v) { return buffers[this].arp_atype = v; } },
-    arp_maclen  : { get : function () { return buffers[this].arp_maclen; },     set : function (v) { return buffers[this].arp_maclen = v; } },
-    arp_addrlen : { get : function () { return buffers[this].arp_addrlen; },    set : function (v) { return buffers[this].arp_addrlen = v; } },
-    arp_opcode  : { get : function () { return buffers[this].arp_opcode; },     set : function (v) { return buffers[this].arp_opcode = v; } },
-    arp_smac    : { get : function () { return buffers[this].arp_smac; },       set : function (v) { return buffers[this].arp_smac = v; } },
-    arp_saddr   : { get : function () { return buffers[this].arp_saddr; },      set : function (v) { return buffers[this].arp_saddr = v; } },
-    arp_dmac    : { get : function () { return buffers[this].arp_dmac; },       set : function (v) { return buffers[this].arp_dmac = v; } },
-    arp_daddr   : { get : function () { return buffers[this].arp_daddr; },      set : function (v) { return buffers[this].arp_daddr = v; } },
-
-    ihl         : { get : function () { return buffers[this].ihl; },            set : function (v) { return buffers[this].ihl = v; } },
-    tos         : { get : function () { return buffers[this].tos; },            set : function (v) { return buffers[this].tos = v; } },
-    tlen        : { get : function () { return buffers[this].tlen; },           set : function (v) { return buffers[this].tlen = v; } },
-    xid         : { get : function () { return buffers[this].xid; },            set : function (v) { return buffers[this].xid = v; } },
-    flags       : { get : function () { return buffers[this].flags; },          set : function (v) { return buffers[this].flags = v; } },
-    ttl         : { get : function () { return buffers[this].ttl; },            set : function (v) { return buffers[this].ttl = v; } },
-    proto       : { get : function () { return buffers[this].proto; },          set : function (v) { return buffers[this].proto = v; } },
-    csum        : { get : function () { return buffers[this].csum; },           set : function (v) { return buffers[this].csum = v; } },
-    saddr       : { get : function () { return buffers[this].saddr; },          set : function (v) { return buffers[this].saddr = v; } },
-    daddr       : { get : function () { return buffers[this].daddr; },          set : function (v) { return buffers[this].daddr = v; } },
-
-    ip4_ihl     : { get : function () { return buffers[this].ip4_ihl; },        set : function (v) { return buffers[this].ip4_ihl = v; } },
-    ip4_tos     : { get : function () { return buffers[this].ip4_tos; },        set : function (v) { return buffers[this].ip4_tos = v; } },
-    ip4_tlen    : { get : function () { return buffers[this].ip4_tlen; },       set : function (v) { return buffers[this].ip4_tlen = v; } },
-    ip4_xid     : { get : function () { return buffers[this].ip4_xid; },        set : function (v) { return buffers[this].ip4_xid = v; } },
-    ip4_flags   : { get : function () { return buffers[this].ip4_flags; },      set : function (v) { return buffers[this].ip4_flags = v; } },
-    ip4_ttl     : { get : function () { return buffers[this].ip4_ttl; },        set : function (v) { return buffers[this].ip4_ttl = v; } },
-    ip4_proto   : { get : function () { return buffers[this].ip4_proto; },      set : function (v) { return buffers[this].ip4_proto = v; } },
-    ip4_csum    : { get : function () { return buffers[this].ip4_csum; },       set : function (v) { return buffers[this].ip4_csum = v; } },
-    ip4_saddr   : { get : function () { return buffers[this].ip4_saddr; },      set : function (v) { return buffers[this].ip4_saddr = v; } },
-    ip4_daddr   : { get : function () { return buffers[this].ip4_daddr; },      set : function (v) { return buffers[this].ip4_daddr = v; } },
-})
-
 
 export const ETHERTYPE_ETH     = 0x0800;
 export const ETHERTYPE_ARP     = 0x0806;

@@ -5,6 +5,7 @@ import {
                                                             IP4_ATYPE,
 
                                                             ADDR_MAC_BCAST,
+                                                            ADDR_MAC_ANY,
                                                             ADDR_MAC_UNKNOWN,
                                                             ADDR_IP4_UNKNOWN,
 } from "./struct.js"
@@ -52,6 +53,21 @@ export const create_arp_request_packet_who_has_mac_bcast = (
 
     this_mac,           this_ip4,
     unknown_mac,        ADDR_IP4_UNKNOWN,
+)
+
+export const create_arp_announce = (
+    mac = 0x000000000000,
+    ip4 = 0x00000000,
+) => create_arp_packet(
+    ADDR_MAC_BCAST,     mac,            ETHERTYPE_ARP,
+
+    MAC_ATYPE,          IP4_ATYPE,
+    MAC_ALEN,           IP4_ALEN,
+
+    ARP_REQUEST,
+
+    mac,                ip4,
+    ADDR_MAC_ANY,       ip4,
 )
 
 export const create_arp_reply_packet_asnwering_my_assignation = (

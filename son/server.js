@@ -6,6 +6,7 @@ import {
                                                             IP4_ATYPE,
 
                                                             ADDR_MAC_BCAST,
+                                                            ADDR_MAC_ANY,
                                                             ADDR_MAC_UNKNOWN,
                                                             ADDR_IP4_UNKNOWN,
 
@@ -21,17 +22,24 @@ const wss = Object.defineProperty({}, "sock", {
 function handle_arp ( pkt ) {
     ARPPacket *pkt;
     
-    const dmac = pkt.eth_dmac; 
-    if ( dmac === ADDR_MAC_BCAST) {
+    if (!this.mac) {
+        if (!pkt.isAnnouncement) {
+            return;
+        }
+        this.mac  = pkt.arp_smac;
+        this.ip4  = pkt.arp_saddr;
+    }
+
+    if ( pkt.eth_dmac === ADDR_MAC_BCAST) {
         this.broadcast(pkt);
         return;
     }
-
+    
     this.server.clients.forEach(c => {
-        if (c.mac === dmac) {
+        if (c.mac === pkt.eth_dmac) {
             c.send( pkt )
         }
-    })
+    })    
 }
 
 function handle_wsc ( pkt ) {
@@ -54,7 +62,7 @@ function handle_eth ( pkt ) {
 }
 
 wss.sock.on( "connection", function (sock) {
-
+    
     const wsc = Object.defineProperties({}, {
         server : { value : this },
         neighs : { get : Set.prototype.difference.bind( this.clients, new Set([sock]) ) },
@@ -66,24 +74,27 @@ wss.sock.on( "connection", function (sock) {
         } } 
     });
 
-    wsc.sock.on( "message", pkt => {
-        const hdr = ETHHeader *pkt;
 
-        console.log( "srv", hdr)
+    Object.defineProperties( sock, {
+        wsc : { value : wsc },
+        mac : { get : function () { return this.wsc.mac; } },
+        ip4 : { get : function () { return this.wsc.ip4; } },
+    } )
+
+    wsc.sock.on( "message", pkt => {
+        ETHHeader *pkt;
 
         console.log({
-            dst_addr: hdr.dmac.hex(6),
-            src_addr: hdr.smac.hex(6),
-            eth_type: hdr.type.hex(2),
+            dst_addr: pkt.dmac.hex(6),
+            src_addr: pkt.smac.hex(6),
+            eth_type: pkt.type.hex(2),
         })
 
-        switch ( hdr.type ) {
+        switch ( pkt.type ) {
             case ETHERTYPE_ETH: handle_eth.call( wsc, pkt ); return;
             case ETHERTYPE_ARP: handle_arp.call( wsc, pkt ); return;
             case ETHERTYPE_WSC: handle_wsc.call( wsc, pkt ); return;
-
-            default:
-                console.log("ETHERTYPE_NA", hdr.type.hex(2))
+            default: console.log("ETHERTYPE_NA", pkt.type.hex(2));
         }
     })
 })

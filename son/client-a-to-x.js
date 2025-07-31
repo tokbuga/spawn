@@ -8,6 +8,8 @@ import {
                                                             ADDR_MAC_BCAST,
                                                             ADDR_IP4_UNKNOWN,
 
+
+    Pointer,
     ETHHeader,          ARPPacket,      IPPacket,
                         ARPHeader,      IP4Header, 
                                         IP6Header, 
@@ -17,10 +19,11 @@ import {
     create_eth_header,
     create_arp_packet,
     create_wsc_inform,
+    create_arp_announce,
     create_arp_request_packet_who_has_mac_bcast,
 } from "./packet.js"
 
-import { handlers, LAN } from "./handle-client.js"
+import handlers from "./handle-client.js"
 
 const log = console.log
 
@@ -46,29 +49,26 @@ const {
     handle_arp_request, handle_ip6,
 } = handlers( wscObject );
 
-
 webSocket.on( "open", function () {
-    
     wscObject.cableState = "CABLE_CONNECTED";
     log( "wsc open", wscObject )
 
-    create_wsc_inform( this.smac, this.sip4 )
-        .send( this )
+    create_arp_announce( this.smac, this.sip4 ).send( this )
 
     setTimeout(() => {
-        create_arp_request_packet_who_has_mac_bcast( this.smac, this.sip4, 0x422dc24ce61a )
-        .send( this );
+        create_arp_request_packet_who_has_mac_bcast( 
+            this.smac, this.sip4, 0x422dc24ce61a 
+        ).send( this );
     }, 500)
 
     this.on( "message", function (pkt) {
-        const hdr = ETHHeader *pkt;
-        
-        log( "handling", this.link, hdr.type )
+        ETHHeader *pkt;
+        log( "handling", this.link, pkt.type )
 
-        switch ( hdr.type ) {
+        switch ( pkt.type ) {
             case ETHERTYPE_ETH : handle_eth( pkt ); return;
             case ETHERTYPE_ARP : handle_arp( pkt ); return;
-            default : log("ETHERTYPE_NA", hdr.type.hex(2))
+            default : log("ETHERTYPE_NA", pkt.type.hex(2))
         }
     })
 })
