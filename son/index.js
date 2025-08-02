@@ -1,1 +1,1 @@
-WebAssembly.instantiateStreaming(fetch("boot.wasm"), self).then(console.log)
+WebAssembly.instantiateStreaming(fetch("boot.wasm"), self)
