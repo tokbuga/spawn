@@ -1,5 +1,5 @@
 (module
-    (import "self" "SHARED_MEMORY"  (memory $memory 1 1 shared))
+    (import "self" "MEMORY"  (memory $memory 1 1 shared))
     (import "memory" "malloc"       (func $malloc (param $length i32) (result i32)))
 
 

@@ -1,5 +1,5 @@
 (module
-    (import "self" "SHARED_MEMORY"  (memory $memory 1 1 shared))
+    (import "self" "MEMORY"  (memory $memory 1 1 shared))
     (import "memory" "malloc"       (func $malloc (param $length i32) (result i32)))
     (import "nil" "array"           (global $nil/array ref))
 
@@ -86,6 +86,10 @@
         (global.set $OFFSET_TIME_SECONDS    $malloc( global($LENGTH_TIME_SECONDS) ))
         (global.set $OFFSET_TIME_MINUTES    $malloc( global($LENGTH_TIME_MINUTES) ))
 
+        $setTickCount<i32>( i32(0) )
+        $setSeconds<i32>( i32(0) )
+        $setMinutes<i32>( i32(0) )
+
         $requestIdleCallback<fun>(
             func($nextTick) 
         )
@@ -108,23 +112,24 @@
         (local.set $seconds (i32.div_u local($elapsed) i32(1000)))
         (if (i32.eq $getSeconds() local($seconds)) 
             (then return)
-            (else $setSeconds( local( $seconds ) ))
+            (else $setSeconds<i32>( local( $seconds ) ))
         )
         
         (local.set $minutes (i32.div_u local($seconds) i32(60)))
         (if (i32.eq $getMinutes() local($minutes)) 
             (then return)
-            (else $setMinutes( local( $minutes ) ))
+            (else $setMinutes<i32>( local( $minutes ) ))
         )
     )
 
 
-    (func $setSeconds (param $seconds i32)
+    (func $setSeconds<i32> (param $seconds i32)
         (i32.store global($OFFSET_TIME_SECONDS) local($seconds) )
     )
 
-    (func $setMinutes (param $minutes i32)
+    (func $setMinutes<i32> (param $minutes i32)
         (i32.store global($OFFSET_TIME_MINUTES) local($minutes) )
+        (warn <ref.i32> text("minutes passed:") $getMinutes())
     )
 
     (func $getSeconds (result i32)
@@ -133,6 +138,10 @@
 
     (func $getMinutes (result i32)
         (i32.load global($OFFSET_TIME_MINUTES) )
+    )
+
+    (func $setTickCount<i32> (param $count i32)
+        (i32.store global($OFFSET_TICK_COUNT) local($count))
     )
 
     (func $getTickCount (result i32)

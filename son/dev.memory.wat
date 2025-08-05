@@ -1,5 +1,5 @@
 (module 
-    (import "self" "SHARED_MEMORY" (memory $memory 1 1 shared))
+    (import "self" "MEMORY" (memory $memory 1 1 shared))
 
     (start $main
         (i32.atomic.store i32(0) i32(16))

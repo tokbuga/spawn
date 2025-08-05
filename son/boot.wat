@@ -1,16 +1,8 @@
 (module 
     (memory $buffer 1)
 
-    (global $self.Promise ref)
-    (global $self.Promise.all ref)
-    (global $self.Promise:then ref)
     (global $self.Array ref)
     (global $self.Array:at ref)
-    (global $self.WebAssembly ref)
-    (global $self.WebAssembly.compile ref)
-    (global $self.WebAssembly.instantiate ref)
-    (global $self.WebAssembly.Module ref)
-    (global $self.WebAssembly.Module.exports ref)
 
     (global $dev/memory                 mut extern)
     (global $dev/memory<Module>         mut extern)
@@ -39,6 +31,11 @@
     (global $sys/event<Module>          mut extern)
     (global $sys/event<Instance>        mut extern)
     (global $sys/event<exports>         mut extern)    
+
+    (global $os/window                  mut extern)
+    (global $os/nodejs                  mut extern)
+    (global $os/window<Module>          mut extern)
+    (global $os/nodejs<Module>          mut extern)
     
     (global $nil                        mut extern)    
     (global $nil/array                  mut extern)    
@@ -52,24 +49,31 @@
 
         $Promise:then<ref.fun>( 
             $Promise.all<ref>ref( 
-                $self.Array.of<refx5>ref(
-                    $WebAssembly.compile<ref>ref( global($wasm:dev/memory) )
+                $self.Array.of<refx7>ref(
+                    $WebAssembly.compile<ref>ref( global($wasm:dev/memory) )    
                     $WebAssembly.compile<ref>ref( global($wasm:dev/clock) )
                     $WebAssembly.compile<ref>ref( global($wasm:dev/storage) )
                     $WebAssembly.compile<ref>ref( global($wasm:dev/ethernet) )
                     $WebAssembly.compile<ref>ref( global($wasm:sys/event) )
+                    $WebAssembly.compile<ref>ref( global($wasm:os/window) )
+                    $WebAssembly.compile<ref>ref( global($wasm:os/nodejs) )
                 )
             )
             func($onallcompile<ref>) 
         )
     )
 
+    (global $exports mut extern)
+
     (func $settle:globals
-        (global.set $dev/memory $self.Object<>ref())   
-        (global.set $dev/clock $self.Object<>ref())   
-        (global.set $dev/storage $self.Object<>ref())   
-        (global.set $dev/ethernet $self.Object<>ref())   
-        (global.set $sys/event $self.Object<>ref())   
+        (global.set $dev/memory     $self.Object<>ref())   
+        (global.set $dev/clock      $self.Object<>ref())   
+        (global.set $dev/storage    $self.Object<>ref())   
+        (global.set $dev/ethernet   $self.Object<>ref())   
+        (global.set $sys/event      $self.Object<>ref())   
+        (global.set $os/window      $self.Object<>ref())   
+        (global.set $os/nodejs      $self.Object<>ref())   
+        (global.set $exports        $self.Object<>ref())   
 
         (global.set $nil 
             $self.Object.fromEntries<ref>ref(
@@ -83,17 +87,27 @@
 
         (global.set $imports 
             $self.Object.fromEntries<ref>ref(
-                $self.Array.of<refx7>ref(
-                    $self.Array.of<refx2>ref( text("SHARED_MEMORY")
+                $self.Array.of<refx11>ref(
+                    $self.Array.of<refx2>ref( text("MEMORY")
                         $WebAssembly.Memory<i32x3>ref(
                             i32(1) i32(1) i32(1)
                         )
+                    )
+                    $self.Array.of<refx2>ref( text("FUNCREF")
+                        $WebAssembly.Table<i32x3>ref(
+                            i32(1) i32(1000) text("anyfunc")
+                        )
+                    )
+                    $self.Array.of<refx2>ref( text("exports")
+                        global($exports)
                     )
                     $self.Array.of<refx2>ref( text("memory") global($dev/memory) )
                     $self.Array.of<refx2>ref( text("clock") global($dev/clock) )
                     $self.Array.of<refx2>ref( text("storage") global($dev/storage) )
                     $self.Array.of<refx2>ref( text("ethernet") global($dev/ethernet) )
                     $self.Array.of<refx2>ref( text("sys/event") global($sys/event) )
+                    $self.Array.of<refx2>ref( text("os/window") global($os/window) )
+                    $self.Array.of<refx2>ref( text("os/nodejs") global($os/nodejs) )
                     $self.Array.of<refx2>ref( text("nil") global($nil) )
                 )
             )
@@ -200,6 +214,23 @@
         )
     )
 
+    (func $WebAssembly.Table<i32x3>ref
+        (param $initial i32)
+        (param $maximum i32)
+        (param $element ref)
+        (result ref)
+
+        (new $self.WebAssembly.Table<ref>ref 
+            $self.Object.fromEntries<ref>ref(
+                $self.Array.of<refx3>ref(
+                    $self.Array<ref.i32>ref( text("initial") local($initial))
+                    $self.Array<ref.i32>ref( text("maximum") local($maximum))
+                    $self.Array<ref.ref>ref( text("element") local($element))
+                )
+            )
+        )
+    )
+
     (func $Uint8Array<ref>ref
         (param $buffer ref)
         (result ref)
@@ -216,17 +247,29 @@
         (global.set $dev/storage<Module>    $Array:at<ref.i32>ref( this i32(2) ))
         (global.set $dev/ethernet<Module>   $Array:at<ref.i32>ref( this i32(3) ))        
         (global.set $sys/event<Module>      $Array:at<ref.i32>ref( this i32(4) ))    
+        (global.set $os/window<Module>      $Array:at<ref.i32>ref( this i32(5) ))    
+        (global.set $os/nodejs<Module>      $Array:at<ref.i32>ref( this i32(6) ))    
 
         $instantiate:dev/memory() 
     )
 
     (func $ondeviceready
         (warn text("all instantiated"))
+
+        $wasm:os/window<ref>(
+            global($imports)
+        )
     )
 
-    (func $onsystemready<ref>
-        (param ref)
-        (warn <refx2> text("os ready") this)
+    (func $onosready<ref>
+        (param $window <Instance>)
+        
+        (warn text("os ready"))
+        (warn 
+            $WebAssembly.Module.exports<ref>ref(
+                this
+            )
+        )
     )
 
     (func $instantiate:dev/clock 
@@ -241,7 +284,6 @@
 
     (func $onclockinstance<ref> 
         (param ref)
-        (error this)
                 
         $self.Object.assign<refx2>( 
             global($dev/clock) 
@@ -263,7 +305,6 @@
 
     (func $onstorageinstance<ref> 
         (param ref)
-        (error this)
                 
         $self.Object.assign<refx2>( 
             global($dev/storage) 
@@ -285,8 +326,6 @@
 
     (func $onmemoryinstance<ref> 
         (param ref)
-        (warn this)
-        (warn global($imports))
         
         $self.Object.assign<refx2>( 
             global($dev/memory) 
@@ -308,14 +347,13 @@
 
     (func $onethernetinstance<ref> 
         (param ref)
-        (error this)
         
         $self.Object.assign<refx2>( 
             global($dev/ethernet) 
             (get <refx2>ref this text("exports")) 
         )
 
-        $ondeviceready()
+        $instantiate:sys/event()
     )
 
     (func $instantiate:sys/event 
@@ -330,17 +368,44 @@
 
     (func $oneventinstance<ref> 
         (param ref)
-        (error this)
         
         $self.Object.assign<refx2>( 
             global($sys/event) 
             (get <refx2>ref this text("exports")) 
         )
+
+        $ondeviceready()
     )
+
+
+    (func $instantiate:os/window 
+        $Promise:then<ref.fun>( 
+            $WebAssembly.instantiate<refx2>ref( 
+                global($os/window<Module>) 
+                global($imports) 
+            )
+            func($onwindowinstance<ref>)
+        )
+    )
+
+    (func $onwindowinstance<ref> 
+        (param $instance <Instance>)
+
+        $self.Object.assign<refx2>( 
+            global($exports) 
+            (get <refx2>ref this text("exports")) 
+        )
+
+        $onosready<ref>( this )
+    )
+
 
     (data $wasm:dev/memory "wasm://dev.memory.wat")
     (data $wasm:dev/clock "wasm://dev.clock.wat")
     (data $wasm:dev/storage "wasm://dev.storage.wat")
     (data $wasm:dev/ethernet "wasm://dev.ethernet.wat")
     (data $wasm:sys/event "wasm://sys.event.wat")
+    (data $wasm:os/window "wasm://os.window.wat")
+    (data $wasm:os/nodejs "wasm://os.nodejs.wat")
+
 )

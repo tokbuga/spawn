@@ -1,5 +1,4 @@
-<script type="importmap">{ "imports": { 
-    "fs" : "./node-fs.js",
-    "ws" : "./node-ws.js" 
-}}</script>
-<script type="module" src="index.js"></script>
+<html>
+    <script>WebAssembly.instantiateStreaming(fetch("boot.wasm"), self)</script>
+    <body></body>
+</html>
