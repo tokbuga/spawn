@@ -17,6 +17,12 @@
         (apply $self.File:lastModifiedDate/get this externref)
     )
 
+    (func $File:arrayBuffer<ref>ref 
+        (param $this                                <File>) 
+        (result $promise                         <Promise>)
+        (apply $self.Blob:arrayBuffer this externref)
+    )
+
     (func $File:type<ref>ref 
         (param $this                                <File>) 
         (result $type                             <String>)
