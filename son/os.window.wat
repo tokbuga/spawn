@@ -2,6 +2,17 @@
     (import "self" "memory" (memory $memory 1 1 shared))
     (import "self" "memory" (global $memory externref))
 
+
+    (include "self/PointerEvent.wat")
+    (include "self/MouseEvent.wat")
+    (include "self/UIEvent.wat")
+    (include "self/DragEvent.wat")
+    (include "self/Event.wat")
+    (include "self/File.wat")
+    (include "self/FileList.wat")
+    (include "self/DataTransfer.wat")
+    (include "self/Worker.wat")
+
     (global $worker                     mut extern)
     (global $workerURL                  mut extern)
     (global $workerScript "
@@ -20,8 +31,11 @@
     ")
 
     (start $main
+        $malloc( i32(24) ) drop
         $init()
     )
+
+    (func $malloc (param i32) (result i32) (i32.atomic.rmw.add false this))
 
     (func $init
         (local $promises <Array>)
@@ -87,14 +101,35 @@
         (apply $self.addEventListener<ref.fun> 
             self (param text("dragover") func($ondragover<ref>))
         )
+
+        (apply $self.addEventListener<ref.fun> 
+            self (param text("pointermove") func($onpointermove<ref>))
+        )
+
+        (apply $self.addEventListener<ref.fun> 
+            self (param text("pointerdown") func($onpointerdown<ref>))
+        )
+
+        (warn global($memory))
     )
 
-    (include "self/Event.wat")
-    (include "self/DragEvent.wat")
-    (include "self/File.wat")
-    (include "self/FileList.wat")
-    (include "self/DataTransfer.wat")
-    (include "self/Worker.wat")
+
+    (func $onpointermove<ref>
+        (param $event                       <PointerEvent>)
+        
+        (warn <i32>
+            $PointerEvent.from<ref>i32( this )
+        )
+    )
+
+    (func $onpointerdown<ref>
+        (param $event                       <PointerEvent>)
+
+        (warn <ref.i32>
+            this
+            $PointerEvent.from<ref>i32( this )
+        )
+    )
 
     (func $ondrop<ref>
         (param $event                          <DragEvent>)
