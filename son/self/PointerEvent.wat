@@ -52,8 +52,8 @@
         (param $this                        <PointerEvent>)
         (result $offset                                i32)
         (local $offset                                 i32)
-
-        (local #offset $malloc(global($PointerEvent.LENGTH)))
+        
+        local($offset $malloc(global($PointerEvent.LENGTH)))
 
         $PointerEvent.store<ref.i32>(
             this local($offset)

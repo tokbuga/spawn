@@ -12,6 +12,7 @@
     (include "self/FileList.wat")
     (include "self/DataTransfer.wat")
     (include "self/Worker.wat")
+    (include "self/Object.wat")
     (include "self/WeakSet.wat")
     (include "self/WeakMap.wat")
     (include "self/WeakRef.wat")
@@ -109,7 +110,7 @@
             )
         )
 
-        (local #promiseAll
+        local($promiseAll
             (apply $self.Promise.all<ref>ref 
                 global($self.Promise) 
                 (param local($promises))
@@ -125,26 +126,23 @@
     (func $onallcompile<ref>
         (param $promises                <Array>)
         (local $workerURL                 <URL>)
-        (local $workerData             <Object>)
+        (local $data                   <Object>)
 
-        (global #worker 
-            new $self.Worker<ref>ref( 
-                $workerURL() 
-            )
-        )
+        local($data $Object:new())
+        local($data)x7
+        
+        (set <refx3> text("memory")       global($memory))
+        (set <refx3> text("shared")       local($promises[0]))
+        (set <refx3> text("sys/event")    local($promises[1]))
+        (set <refx3> text("dev/memory")   local($promises[2]))
+        (set <refx3> text("dev/clock")    local($promises[3]))
+        (set <refx3> text("dev/storage")  local($promises[4]))
+        (set <refx3> text("dev/ethernet") local($promises[5]))
 
-        (local #workerData $self.Object())
+        global($worker $Worker:new($workerURL()))
 
-        (set <refx3> local($workerData) text("memory") global($memory))
-        (set <refx3> local($workerData) text("shared") local($promises[0]))
-        (set <refx3> local($workerData) text("sys/event") local($promises[1]))
-        (set <refx3> local($workerData) text("dev/memory") local($promises[2]))
-        (set <refx3> local($workerData) text("dev/clock") local($promises[3]))
-        (set <refx3> local($workerData) text("dev/storage") local($promises[4]))
-        (set <refx3> local($workerData) text("dev/ethernet") local($promises[5]))
-
-        $Worker:postMessage<refx2>(
-            global($worker) local($workerData)
+        $Worker:postMessage(
+            global($worker) local($data)
         )
 
         $listen()    
@@ -211,13 +209,21 @@
 
         (loop $files/i
 
-            (local.set $files.length    local($files.length)-- )
-            (local.set $files/i         $FileList:item<ref.i32>ref(local($files) local($files.length)))
+            (local #files.length 
+                local($files.length)-- 
+            )
 
-            (local.set $files/i.name                $File:name<ref>ref(local($files/i)))
-            (local.set $files/i.size                $File:size<ref>i32(local($files/i)))
-            (local.set $files/i.lastModified        $File:lastModified<ref>f64(local($files/i)))
-            (local.set $files/i.lastModifiedDate    $File:lastModifiedDate<ref>ref(local($files/i)))            
+            (local #files/i
+                $FileList:item<ref.i32>ref(
+                    local($files) 
+                    local($files.length)
+                )
+            )
+            
+            local($files/i.name                $File:name<ref>ref(local($files/i)))
+            local($files/i.size                $File:size<ref>i32(local($files/i)))
+            local($files/i.lastModified        $File:lastModified<ref>f64(local($files/i)))
+            local($files/i.lastModifiedDate    $File:lastModifiedDate<ref>ref(local($files/i)))            
 
             (warn <refx2.fun>
                 local($files/i.name)

@@ -1,9 +1,7 @@
 
     (global $WeakSet.LENGTH                    i32 i32(16))
 
-    (func $WeakSet:new 
-        (result <WeakSet>) (call $WeakSet:new<>ref) 
-    )
+    (alias $WeakSet:new                  $WeakSet:new<>ref)
 
     (func $WeakSet:new<>ref 
         (result $this                            <WeakSet>) 

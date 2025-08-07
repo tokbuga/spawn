@@ -1,10 +1,7 @@
 
     (global $WeakMap.LENGTH                    i32 i32(16))
 
-    (func $WeakMap:new 
-        (result $this                            <WeakMap>) 
-        (new $self.WeakMap<>ref) 
-    )
+    (alias $WeakMap:new                  $WeakMap:new<>ref)
 
     (func $WeakMap:new<>ref 
         (result $this                            <WeakMap>) 
