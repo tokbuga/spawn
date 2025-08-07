@@ -775,9 +775,16 @@
 
     (func $MouseEvent:relatedTarget/get<ref>i32 
         (param $this                        <MouseEvent>) 
-        (result $value                                 i32) 
+        (result $value                               i32) 
 
-        (apply $self.MouseEvent:relatedTarget/get this i32) 
+        $ref($MouseEvent:relatedTarget/get<ref>ref( this )) 
+    )
+
+    (func $MouseEvent:relatedTarget/get<ref>ref 
+        (param $this                        <MouseEvent>) 
+        (result $value                          <Object>) 
+
+        (apply $self.MouseEvent:relatedTarget/get this ref) 
     )
 
     (func $MouseEvent:relatedTarget/load<i32>i32 

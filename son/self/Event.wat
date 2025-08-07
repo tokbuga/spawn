@@ -158,6 +158,13 @@
             local($offset) $Event:type/get<ref>i32( this )
         )
         
+        $Event:currentTarget/store<i32.i32>( 
+            local($offset) $Event:currentTarget/get<ref>i32( this )
+        )
+        
+        $Event:target/store<i32.i32>( 
+            local($offset) $Event:target/get<ref>i32( this )
+        )
     )
 
     (func $Event:bubbles/read<i32>i32 
@@ -478,6 +485,13 @@
         (apply $self.Event:currentTarget/get this externref) 
     )
 
+    (func $Event:currentTarget/get<ref>i32 
+        (param $this                               <Event>) 
+        (result $target                                i32) 
+
+        $ref($Event:currentTarget/get<ref>ref( this )) 
+    )
+
     (func $Event:currentTarget/load<i32>i32 
         (param $offset                                 i32) 
         (result $currentTarget                         i32) 
@@ -512,6 +526,13 @@
         (result $target                      <EventTarget>) 
 
         (apply $self.Event:target/get this externref)
+    )
+
+    (func $Event:target/get<ref>i32 
+        (param $this                               <Event>) 
+        (result $index                                 i32) 
+        
+        $ref($Event:target/get<ref>ref( this ))
     )
 
     (func $Event:target/load<i32>i32 

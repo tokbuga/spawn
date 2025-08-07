@@ -1,5 +1,5 @@
 (module 
-    (import "self" "memory" (memory $memory 1 1 shared))
+    (import "self" "memory" (memory $memory 10 10 shared))
     (import "self" "memory" (global $memory externref))
 
 
@@ -12,6 +12,15 @@
     (include "self/FileList.wat")
     (include "self/DataTransfer.wat")
     (include "self/Worker.wat")
+    (include "self/WeakSet.wat")
+    (include "self/WeakMap.wat")
+    (include "self/WeakRef.wat")
+
+
+    (table $ref 1 65536 externref)
+
+    (global $weak<Set> new WeakSet)
+    (global $weak<Map> new WeakMap)
 
     (global $worker                     mut extern)
     (global $workerURL                  mut extern)
@@ -31,11 +40,57 @@
     ")
 
     (start $main
-        $malloc( i32(24) ) drop
+        $malloc(i32(24))^
         $init()
     )
 
-    (func $malloc (param i32) (result i32) (i32.atomic.rmw.add false this))
+    (alias $malloc $malloc<i32>i32)
+    (alias $deref $deref<i32>ref)
+    (alias $ref $ref<ref>i32)
+
+    (func $malloc<i32>i32 
+        (param $length                  i32) 
+        (result $offset                 i32) 
+
+        (i32.atomic.rmw.add i32(0) local($length))
+    )
+
+    (func $deref<i32>ref 
+        (param $index                    i32)
+        (result $value              <Object>)
+
+        $WeakRef:deref<ref>ref( get($ref local($index)) )
+    )
+
+    (func $ref<ref>i32 
+        (param $value               <Object>)
+        (result $index                   i32)
+
+        (if (null === this)
+            (then false return)
+        )
+
+        (if (call $WeakMap:hasnt<refx2>i32 
+                global($weak<Map>) local($value) 
+            )
+            (then 
+                $WeakMap:set<refx2.i32>(
+                    global($weak<Map>) 
+                    local($value) 
+                    grow($ref 
+                        $WeakRef:new<ref>ref(
+                            local($value)
+                        ) 
+                        true
+                    )
+                )
+            )
+        )
+
+        $WeakMap:get<refx2>i32(
+            global($weak<Map>) local($value) 
+        )
+    )
 
     (func $init
         (local $promises <Array>)

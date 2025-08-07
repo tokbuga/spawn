@@ -107,7 +107,7 @@
         (param $this                             <UIEvent>) 
         (result $value                                 i32) 
 
-        (apply $self.UIEvent:sourceCapabilities/get this i32) 
+        $ref($UIEvent:sourceCapabilities/get<ref>ref( this )) 
     )
 
     (func $UIEvent:sourceCapabilities/get<ref>ref 
@@ -151,7 +151,7 @@
         (param $this                             <UIEvent>) 
         (result $value                                 i32) 
 
-        (apply $self.UIEvent:view/get this i32) 
+        $ref($UIEvent:view/get<ref>ref( this )) 
     )
 
     (func $UIEvent:view/get<ref>ref 
