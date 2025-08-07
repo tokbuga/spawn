@@ -45,8 +45,8 @@
     )
 
     (alias $malloc $malloc<i32>i32)
-    (alias $deref $deref<i32>ref)
     (alias $ref $ref<ref>i32)
+    (alias $deref $deref<i32>ref)
 
     (func $malloc<i32>i32 
         (param $length                  i32) 
@@ -54,6 +54,8 @@
 
         (i32.atomic.rmw.add i32(0) local($length))
     )
+
+
 
     (func $deref<i32>ref 
         (param $index                    i32)
