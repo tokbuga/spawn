@@ -22,7 +22,54 @@
         (new $self.Array<ref>ref local($value)) 
     )
 
-    (func $Array:from<ref>ref 
+    (func $Array:map<refx2>ref 
+        (param $this                               <Array>) 
+        (param $callback                        <Function>) 
+        (result $this                              <Array>) 
+
+        (apply $self.Array:map<ref>ref this (param local($callback)))
+    )
+
+    (func $Array:join<ref>ref 
+        (param $this                               <Array>) 
+        (result $text                             <string>) 
+
+        (call $Array:join<refx2>ref this (call $self.String<>ref))
+    )
+
+    (func $Array:join<refx2>ref 
+        (param $this                               <Array>) 
+        (param $connector                         <string>) 
+        (result $text                             <string>) 
+
+        (apply $self.Array:join<ref>ref this (param local($connector)))
+    )
+
+    (func $Array:splice<ref.i32x2.ref> 
+        (param $this                               <Array>) 
+        (param $index                                  i32) 
+        (param $count                                  i32) 
+        (param $insert                                 ref) 
+
+        (apply $self.Array:splice<i32x2.ref>
+            this 
+            (param 
+                local($index)
+                local($count)
+                local($insert)
+            )
+        )
+    )
+
+    (func $Array:map<ref.fun>ref 
+        (param $this                               <Array>) 
+        (param $callback                           funcref) 
+        (result $this                              <Array>) 
+
+        (apply $self.Array:map<fun>ref this (param local($callback)))
+    )
+
+    (func $Array.from<ref>ref 
         (param $value                             <Object>) 
         (result $this                              <Array>) 
 
