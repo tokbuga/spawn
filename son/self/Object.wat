@@ -1,6 +1,6 @@
 
-
-    (alias $Object:new                    $Object:new<>ref)
+    (alias $Object:new                      $Object:new<>ref)
+    (alias $Object.fromEntries   $Object.fromEntries<ref>ref)
 
     (func $Object:new<>ref 
         (result $this                             <Object>) 
@@ -8,9 +8,29 @@
     )
 
     (func $Object:new<ref>ref 
-        (param $scriptURL                            <URL>) 
-        (result $this                             <Worker>) 
+        (param $value                             <Object>) 
+        (result $this                             <Object>) 
 
-        (new $self.Worker<ref>ref local($scriptURL)) 
+        (new $self.Object<ref>ref local($value)) 
     )
 
+    (func $Object.fromEntries<ref>ref 
+        (param $entries                            <Array>) 
+        (result $this                             <Object>) 
+
+        (call $self.Object.fromEntries<ref>ref local($entries))
+    )
+
+    (func $Object.fromKeyValue<refx2>ref 
+        (param $key                               <String>) 
+        (param $value                             <Object>) 
+        (result $this                             <Object>) 
+
+        $Object.fromEntries<ref>ref(
+            $Array:new<ref>ref(
+                $Array.of<refx2>ref( 
+                    local($key) local($value)
+                )
+            )
+        )
+    )

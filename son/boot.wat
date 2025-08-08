@@ -1,28 +1,26 @@
 (module 
     (memory 100)
 
+    (global $memory mut extern)
+    (global $buffer mut extern)
+
+    (include "self/Array.wat")
+    (include "self/Object.wat")
+    (include "self/Memory.wat")
+    (include "self/Buffer.wat")
+    (include "self/DataView.wat")
+
     (start $boot
-        $wasm:os/window<ref>ref(
-            $self.Object.fromEntries<ref>ref(
-                $self.Array.of<ref>ref(
-                    $self.Array.of<ref.ref>ref( 
-                        text("memory")
-                        new $self.WebAssembly.Memory<ref>ref( 
-                            $self.Object.fromEntries<ref>ref(
-                                $self.Array.of<refx3>ref(
-                                    $self.Array.of<ref.i32>ref( text("initial") i32(10))
-                                    $self.Array.of<ref.i32>ref( text("maximum") i32(10))
-                                    $self.Array.of<ref.i32>ref( text( "shared")  true  )
-                                )
-                            )
-                        )
-                    )
-                )
+
+        global($memory $Memory:new<i32x3>ref( i32(10) i32(10) true ) )
+        global($buffer $Memory:buffer( global($memory) ) )
+        
+        $wasm:ref<ref>(
+            $Object.fromKeyValue<refx2>ref(
+                text("memory") global($memory)
             )
         )
-
-        (log<ref>)
     )
 
-    (data $wasm:os/window "wasm://os.window.wat")
+    (data $wasm:ref "wasm://ref.wat")
 )

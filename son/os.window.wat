@@ -2,7 +2,6 @@
     (import "self" "memory" (memory $memory 10 10 shared))
     (import "self" "memory" (global $memory externref))
 
-
     (include "self/PointerEvent.wat")
     (include "self/MouseEvent.wat")
     (include "self/UIEvent.wat")
@@ -41,13 +40,13 @@
     ")
 
     (start $main
-        $malloc(i32(24))^
+        $malloc(i32(24));
         $init()
     )
 
-    (alias $malloc $malloc<i32>i32)
     (alias $ref $ref<ref>i32)
     (alias $deref $deref<i32>ref)
+    (alias $malloc $malloc<i32>i32)
 
     (func $malloc<i32>i32 
         (param $length                  i32) 
@@ -55,7 +54,6 @@
 
         (i32.atomic.rmw.add i32(0) local($length))
     )
-
 
 
     (func $deref<i32>ref 
@@ -100,13 +98,8 @@
         (local $promiseAll <Promise>)
 
         (local #promises 
-            $self.Array.of<refx6>ref(
+            $self.Array.of<ref>ref(
                 $self.WebAssembly.compile<ref>ref( global($wasm:shared) )
-                $self.WebAssembly.compile<ref>ref( global($wasm:sys/event) )
-                $self.WebAssembly.compile<ref>ref( global($wasm:dev/memory) )    
-                $self.WebAssembly.compile<ref>ref( global($wasm:dev/clock) )
-                $self.WebAssembly.compile<ref>ref( global($wasm:dev/storage) )
-                $self.WebAssembly.compile<ref>ref( global($wasm:dev/ethernet) )
             )
         )
 
@@ -133,11 +126,7 @@
         
         (set <refx3> text("memory")       global($memory))
         (set <refx3> text("shared")       local($promises[0]))
-        (set <refx3> text("sys/event")    local($promises[1]))
-        (set <refx3> text("dev/memory")   local($promises[2]))
-        (set <refx3> text("dev/clock")    local($promises[3]))
-        (set <refx3> text("dev/storage")  local($promises[4]))
-        (set <refx3> text("dev/ethernet") local($promises[5]))
+
 
         global($worker $Worker:new($workerURL()))
 
@@ -290,10 +279,4 @@
 
 
     (data $wasm:shared "wasm://shared.wat")
-    (data $wasm:dev/memory "wasm://dev.memory.wat")
-    (data $wasm:dev/clock "wasm://dev.clock.wat")
-    (data $wasm:dev/storage "wasm://dev.storage.wat")
-    (data $wasm:dev/ethernet "wasm://dev.ethernet.wat")
-    (data $wasm:sys/event "wasm://sys.event.wat")
-
 )
