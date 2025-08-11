@@ -1,12 +1,13 @@
 (module 
-    (import "self" "memory" (memory $memory 10 10 shared))
-    (import "memory" "buffer" (global $buffer externref))
+    (import "self" "memory"     (memory $memory 10 10 shared))
+    (import "self" "memory"     (global $memory externref))
+    (import "memory" "buffer"   (global $buffer externref))
 
     (alias $ref $ref<ref>i32)
+    (alias $ref.count $ref.count<>i32)
+    (alias $ref.rows $ref.rows<>ref)
     (alias $deref $deref<i32>ref)
     (alias $malloc $malloc<i32>i32)
-    (alias $randomUUID $randomUUID<>v128)
-    (alias $toUuidString $toUuidString<v128>ref)
 
     (include "self/Array.wat")
     (include "self/Object.wat")
@@ -18,112 +19,301 @@
     (include "self/String.wat")
     (include "self/Number.wat")
     (include "self/TypedArray.wat")
+    (include "self/Event.wat")
+    (include "self/MessageEvent.wat")
+
+    (include "core/self.wat")
+    (include "core/console.wat")
+    (include "core/uuid.wat")
 
     (global $weak<Map> new WeakMap)
     (global $view<Memory> mut extern)
 
     (table $ref 1 65536 externref)
 
+    (global $ref.DB_HEADER_OFFSET (mut i32) i32(0))
+    (global $ref.DB_HEADER_LENGTH i32 i32(16))
+
+    (global $ref.DB_OFFSET (mut i32) i32(0))
+    (global $ref.MAX_ROW_COUNT  i32  i32(4))
+    (global $ref.BYTES_PER_ROW i32  i32(38))
+
+    (global $ref.OFFSET_ID    i32  i32(0))
+    (global $ref.LENGTH_ID    i32  i32(4))
+
+    (global $ref.OFFSET_UUID    i32  i32(4))
+    (global $ref.LENGTH_UUID    i32  i32(16))
+
+    (global $ref.OFFSET_PARENT_UUID    i32  i32(20))
+    (global $ref.LENGTH_PARENT_UUID    i32  i32(16))
+    
+    (global $ref.OFFSET_TABLE_INDEX    i32  i32(36))
+    (global $ref.LENGTH_TABLE_INDEX    i32  i32(2))
+
+
     (start $main
 
         drop($malloc(i32(16)))
+
         global($view<Memory> 
-            $Uint8Array:new(global($buffer))
-        )
-
-
-        (log<ref>         
-            $toUuidString(
-                $randomUUID()
+            $Uint8Array:new(
+                global($buffer)
             )
         )
-    )
 
-    (func $toUuidString<v128>ref
-        (param $value                       v128)
-        (result $uuid                   <string>)
-        (local $array                    <Array>)
-
-        local($array 
-            $Array:map<ref.fun>ref(
-                $Array.from<ref>ref( 
-                    $Uint8Array:new<v128>ref( this ) 
-                )
-                (func $toHexString (param i32) (result ref)
-                    $String:padStart<ref.i32x2>ref(
-                        $Number:toString<i32x2>ref(
-                            local(0) i32(16)
-                        )
-                        i32(2)
-                        i32(0)
+        global($ref.DB_HEADER_OFFSET 
+            $malloc(
+                (i32.add
+                    global($ref.DB_HEADER_LENGTH)
+                    (i32.mul
+                        global($ref.MAX_ROW_COUNT)
+                        global($ref.BYTES_PER_ROW)
                     )
                 )
             )
         )
 
-        local($array)x4
+        global($ref.DB_OFFSET 
+            (i32.add
+                global($ref.DB_HEADER_OFFSET)
+                global($ref.DB_HEADER_LENGTH)
+            )
+        )
 
-        $Array:splice<ref.i32x2.ref>( i32(10) i32(0) text("-"))
-        $Array:splice<ref.i32x2.ref>(  i32(8) i32(0) text("-"))
-        $Array:splice<ref.i32x2.ref>(  i32(6) i32(0) text("-"))
-        $Array:splice<ref.i32x2.ref>(  i32(4) i32(0) text("-"))
+        (log<ref> global($buffer))
+
+        $ref.add<ref>v128( global($view<Memory>) );
+        $ref.add<ref>v128( global($memory) );
+        $ref.add<ref>v128( global($buffer) );
+
+        (warn $ref:uuid<i32>ref( i32(2) ) )
+
+        (warn $toUuidArray( $ref:uuid<i32>v128( i32(2) ) ) )
+
+        (set <refx3> self text("uuid") $toUuidArray( $ref:uuid<i32>v128( i32(2) ) ))
+
+        (warn $ref:toObject<i32>ref( i32(1) ) )
+        (warn <i32> $ref:dbOffset<i32>i32( i32(2) ) )
+        (warn $ref.rows() )
+        (warn $ref:toBuffer<i32>ref( i32(1) ) )
+
+        $console.table( $ref.rows() )
+    )
+
+    (on $message
+        (param $event <MessageEvent>)
+
+        (error this)
+    )
+
+    (func $ref.count<>i32
+        (result $count i32)
+        (i32.load offset=4 global($ref.DB_HEADER_OFFSET))
+    )
+
+    (func $ref.rows<>ref
+        (result $rows <Array>)
         
-        $Array:join<ref>ref( 
-            local($array)
+        (local $this <Array>)
+        (local $count i32)
+
+        (local #this $Array:new())
+
+        (if (local.tee $count $ref.count())
+            (then
+                (loop $count--
+                    local($count (i32.sub local($count) i32(1)))
+
+                    $Array:unshift<refx2>(
+                        this $ref:toObject<i32>ref(
+                            local($count)
+                        )
+                    )
+
+                    (br_if $count-- local($count))
+                )
+            )
+        )
+
+        this
+    )
+
+    (func $ref:dbOffset<i32>i32
+        (param $id i32)
+        (result $offset i32)
+        
+        (i32.mul global($ref.BYTES_PER_ROW) local($id))
+    )
+
+    (func $ref:globalOffset<i32>i32
+        (param $id i32)
+        (result $offset i32)
+        
+        (i32.add global($ref.DB_OFFSET) $ref:dbOffset<i32>i32( local($id) ))
+    )
+
+    (func $ref:id<>i32
+        (result $id i32)
+        (i32.atomic.rmw.add offset=4 global($ref.DB_HEADER_OFFSET) i32(1))
+    )
+
+    (func $ref:id<i32>i32
+        (param $id i32)
+        (result $id i32)
+
+        (i32.load offset=0 $ref:globalOffset<i32>i32( local($id) ))
+    )
+
+    (func $ref:uuid<i32>v128
+        (param $id i32)
+        (result $uuid v128)
+
+        (v128.load offset=4 $ref:globalOffset<i32>i32( local($id) ))
+    )
+
+    (func $ref:parentUuid<i32>v128
+        (param $id i32)
+        (result $uuid v128)
+
+        (v128.load offset=20 $ref:globalOffset<i32>i32( local($id) ))
+    )
+
+    (func $ref:tableIndex<i32>i32
+        (param $id i32)
+        (result $index i32)
+
+        (i32.load16_u offset=36 $ref:globalOffset<i32>i32( local($id) ))
+    )
+
+    (func $ref:toObject<i32>ref
+        (param $id i32)
+        (result $json <Object>)
+        (local $entries <Object>)
+
+        (local #entries $Array:new())
+
+        local($entries)x5
+
+        $Array:push<refx2>( $Array.of<ref.i32>ref( text("id") $ref:id<i32>i32( this ) ))
+        $Array:push<refx2>( $Array.of<ref.ref>ref( text("uuid") $ref:uuid<i32>ref( this ) ))
+        $Array:push<refx2>( $Array.of<ref.ref>ref( text("parentUuid") $ref:parentUuid<i32>ref( this ) ))
+        $Array:push<refx2>( $Array.of<ref.i32>ref( text("tableIndex") $ref:tableIndex<i32>i32( this ) ))
+        $Array:push<refx2>( $Array.of<ref.ref>ref( text("object") $ref:object<i32>ref( this ) ))
+
+        $Object.fromEntries<ref>ref( 
+            local($entries) 
         )
     )
 
-    (func $randomUUID<>v128
-        (result                             v128)
-        (local $view            <BigUint64Array>)
-        (local $struuid                 <String>)
-        (local $regexp                  <RegExp>)
-        (local $match                    <Array>)
-        (local $byteArray           <Uint8Array>)
-        (local $uuid                        v128)
-
-        local($struuid $crypto.randomUUID())
+    (func $ref:toBuffer<i32>ref
+        (param $id i32)
+        (result $buffer <ArrayBuffer>)
         
-        local($regexp $RegExp:new<refx2>ref(
-            global($RegExp.MATCH_HEX) 
-            global($RegExp.FLAG_GLOBAL)
-        ))
-      
-        local($match $String:match<refx2>ref(
-            local($struuid) local($regexp)
-        ))
-
-        local($match $Array:map<ref.fun>ref(
-            local($match) 
-            (func $toInteger<ref>i32 
-                (param ref) 
-                (result i32)
-                $parseInt<ref.i32>i32(
-                    local(0) i32(16)
+        $TypedArray:buffer<ref>ref(
+            $TypedArray:slice<ref>ref(
+                $Uint8Array:new<ref.i32x2>ref(
+                    global($buffer)
+                    $ref:globalOffset<i32>i32( this ) 
+                    global($ref.BYTES_PER_ROW)
                 )
             )
-        ))
-
-        local($byteArray $Uint8Array.from<ref>ref(
-            local($match)
-        ))
-
-        local($view $BigUint64Array:new<ref>ref(
-            $TypedArray:buffer(local($byteArray))
-        ))
-
-        local($uuid (i64x2.replace_lane 0 local($uuid) $BigUint64Array:at(local($view) i32(0))))
-        local($uuid (i64x2.replace_lane 1 local($uuid) $BigUint64Array:at(local($view) i32(1))))
-
-        local($uuid)
+        )
     )
 
-    (func $parseInt<ref.i32>i32
-        (param $string                  <string>)
-        (param $base                         i32)
-        (result $integer                     i32)
+    (func $ref:id<i32x2>
+        (param $id i32)
+        (param $new_id i32)
 
-        (call $self.parseInt<ref.i32>i32 this local($base))
+        (i32.store offset=0 $ref:globalOffset<i32>i32( local($id) ) local($new_id))
+    )
+
+    (func $ref:uuid<i32.v128>
+        (param $id i32)
+        (param $uuid v128)
+
+        (v128.store offset=4 $ref:globalOffset<i32>i32( local($id) ) local($uuid))
+    )
+
+    (func $ref:uuid.eq<i32.v128>i32
+        (param $id i32)
+        (param $uuid v128)
+        (result $eq i32)
+
+        (i8x16.all_true (i8x16.eq local($uuid) $ref:uuid<i32>v128( this )))
+    )
+
+    (func $ref:parentUuid<i32.v128>
+        (param $id i32)
+        (param $uuid v128)
+
+        (v128.store offset=20 $ref:globalOffset<i32>i32( local($id) ) local($uuid))
+    )
+
+    (func $ref:tableIndex<i32x2>
+        (param $id i32)
+        (param $index i32)
+
+        (i32.store16 offset=36 $ref:globalOffset<i32>i32( local($id) ) local($index))
+    )
+
+    (func $ref:uuid<i32>ref
+        (param $id i32)
+        (result $uuid <string>)
+        (call $toUuidString<v128>ref $ref:uuid<i32>v128( local($id) ) )
+    )
+
+    (func $ref:parentUuid<i32>ref
+        (param $id i32)
+        (result $uuid <string>)
+        (call $toUuidString<v128>ref $ref:parentUuid<i32>v128( local($id) ) )
+    )
+
+    (func $ref:object<i32>ref
+        (param $id i32)
+        (result $object ref)
+        (call $deref<i32>ref $ref:tableIndex<i32>i32( local($id) ) )
+    )
+
+    (func $ref.get
+        (param $uuid v128)
+        (result ref)
+        
+        (local $id i32)
+        
+        local($id $ref.count())
+
+        (if local($id)
+            (then
+                (loop $count--
+                    local($id (i32.sub local($id) i32(1)))
+
+                    (if (call $ref:uuid.eq<i32.v128>i32 local($id) this )
+                        (then $ref:object<i32>ref( local($id) ) return)
+                    )
+
+                    (br_if $count-- local($id))
+                )
+            )
+        )
+
+        null
+    )
+
+    (func $ref.add<ref>v128
+        (param $object ref)
+        (result $uuid v128)
+
+        (local $id i32)
+        (local $uuid v128)
+        
+        (local #id $ref:id<>i32())
+        (local #uuid $randomUUID())
+
+        $ref:id<i32x2>( local($id) local($id) )
+        $ref:uuid<i32.v128>( local($id) local($uuid) )
+        $ref:tableIndex<i32x2>( local($id) $ref( this ) )
+
+        local($uuid)
     )
 
     (func $malloc<i32>i32 

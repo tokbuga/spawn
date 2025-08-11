@@ -1,7 +1,10 @@
 
-    (alias $Array:new                   $Array:new<ref>ref)
+    (alias $Array:new                      $Array:new<>ref)
     (alias $Array.of                     $Array.of<ref>ref)
+    (alias $Array.of<ref.ref>ref       $Array.of<refx2>ref)
     (alias $Array.from                 $Array.from<ref>ref)
+    (alias $Array:reverse              $Array:reverse<ref>)
+    (alias $Array:unshift            $Array:unshift<refx2>)
 
     (func $Array:new<>ref 
         (result $this                              <Array>) 
@@ -30,6 +33,18 @@
         (apply $self.Array:map<ref>ref this (param local($callback)))
     )
 
+    (func $Array:reverse<ref> 
+        (param $this                               <Array>) 
+        (apply $self.Array:reverse this)
+    )
+
+    (func $Array:reverse<ref>ref 
+        (param $this                               <Array>) 
+        (result $this                              <Array>) 
+
+        (apply $self.Array:reverse this ref)
+    )
+
     (func $Array:join<ref>ref 
         (param $this                               <Array>) 
         (result $text                             <string>) 
@@ -43,6 +58,36 @@
         (result $text                             <string>) 
 
         (apply $self.Array:join<ref>ref this (param local($connector)))
+    )
+
+    (func $Array:push<refx2>
+        (param $this                               <Array>) 
+        (param $item                                   ref) 
+
+        (apply $self.Array:push<ref> this (param local($item)))
+    )
+
+    (func $Array:unshift<refx2>
+        (param $this                               <Array>) 
+        (param $item                                   ref) 
+
+        (apply $self.Array:unshift<ref> this (param local($item)))
+    )
+
+    (func $Array:push<refx2>i32 
+        (param $this                               <Array>) 
+        (param $item                                   ref) 
+        (result $length                                i32) 
+
+        (apply $self.Array:push<ref>i32 this (param local($item)))
+    )
+
+    (func $Array:append<refx2>ref 
+        (param $this                               <Array>) 
+        (param $item                                   ref) 
+        (result $this                              <Array>) 
+
+        $Array:push<refx2>( this local($item) ) local($this)
     )
 
     (func $Array:splice<ref.i32x2.ref> 

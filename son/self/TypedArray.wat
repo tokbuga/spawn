@@ -63,6 +63,23 @@
         (new $self.Uint8Array<ref>ref local($buffer)) 
     )
 
+    (func $Uint8Array:new<ref.i32>ref 
+        (param $buffer                            <Buffer>) 
+        (param $byteOffset                             i32) 
+        (result $this                         <Uint8Array>) 
+
+        (new $self.Uint8Array<ref.i32>ref local($buffer) local($byteOffset)) 
+    )
+
+    (func $Uint8Array:new<ref.i32x2>ref 
+        (param $buffer                            <Buffer>) 
+        (param $byteOffset                             i32) 
+        (param $length                                 i32) 
+        (result $this                         <Uint8Array>) 
+
+        (new $self.Uint8Array<ref.i32x2>ref local($buffer) local($byteOffset) local($length)) 
+    )
+
     (func $Uint8Array:new<v128>ref
         (param $v128                                  v128)
         (result $this                         <Uint8Array>) 
@@ -141,5 +158,33 @@
 
         (apply $self.Uint8Array:__proto__.set<ref.i32> 
             this (param local($valueArray) local($index))
+        )
+    )
+
+    (func $TypedArray:slice<ref>ref
+        (param $this                          <TypedArray>) 
+        (result $this                         <TypedArray>) 
+
+        (apply $self.Uint8Array:__proto__.slice this ref)
+    )
+
+    (func $TypedArray:slice<ref.i32>ref
+        (param $this                          <TypedArray>) 
+        (param $start                                  i32) 
+        (result $this                         <TypedArray>) 
+
+        (apply $self.Uint8Array:__proto__.slice<i32>ref 
+            this (param local($start))
+        )
+    )
+
+    (func $TypedArray:slice<ref.i32x2>ref
+        (param $this                          <TypedArray>) 
+        (param $start                                  i32) 
+        (param $end                                    i32) 
+        (result $this                         <TypedArray>) 
+
+        (apply $self.Uint8Array:__proto__.slice<i32x2>ref 
+            this (param local($start) local($end))
         )
     )
