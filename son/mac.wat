@@ -28,11 +28,11 @@
     (include "self/Window.wat")
     (include "self/CustomEvent.wat")
     (include "self/EventTarget.wat")
-    
+
     (include "wasm/Window.wat")
 
-    (include "core/wasm.wat")
     (include "core/self.wat")
+    (include "core/wasm.wat")
     (include "core/console.wat")
     (include "core/uuid.wat")
 
@@ -60,29 +60,22 @@
     (global $ref.OFFSET_TABLE_INDEX    i32  i32(36))
     (global $ref.LENGTH_TABLE_INDEX    i32  i32(2))
 
-
     (global $ws mut extern)
 
-    (global $self.name ref)
-    (global $deviceUuid (mut v128) (v128.const i64x2 0 0))
 
     (start $main
-        (warn <ref> text("ref device loaded!"))
+        (warn <ref> text("mac device loaded!"))
 
         drop($malloc(i32(16)))
 
-        global($deviceUuid
-            $fromUuidString<ref>v128( 
-                global($self.name)
-            )
-        )
-
         global($view<Memory> 
             $Uint8Array:new(
-                global($buffer) 
+                global($buffer)
             )
         )
 
+
+        $ws();
 
         global($ref.DB_HEADER_OFFSET 
             $malloc(
@@ -106,11 +99,12 @@
         (log<ref> global($buffer))
 
         $ref.add<ref>v128( global($view<Memory>) );
-        $ref.add<ref>v128( self );
+        $ref.add<ref>v128( global($memory) );
         $ref.add<ref>v128( global($buffer) );
 
         (warn $ref:uuid<i32>ref( i32(2) ) )
 
+        (warn $toUuidArray( $ref:uuid<i32>v128( i32(2) ) ) )
 
         (set <refx3> self text("uuid") $toUuidArray( $ref:uuid<i32>v128( i32(2) ) ))
 
@@ -121,14 +115,13 @@
 
         $console.table( $ref.rows() )
 
-
         $db:new<ref.i32>i32(
             text("eventLoop") i32(128)
         )
 
         (warn <i32>)
 
-        $ws();
+
 
 
         (; $ps.ALIGN_DB_ALLOCATIONS ;)
@@ -143,9 +136,7 @@
 
         ) )
 
-        (warn <refx2> text("deviceUuid:") $toUuidString( global($deviceUuid) ))
     )
-
 
     (func $ws (result <WebSocket>)
 
@@ -175,14 +166,6 @@
     (func $ws/onopen<ref>
         (param $event                   <Event>)
         (warn<refx2> text("ws is open") this)
-
-        $WebSocket:send( 
-            global($ws) 
-            $ref:toBuffer<i32>ref( i32(1) )
-        )
-
-        (warn<refx2> text("buffer sent over ws:") $ref:toBuffer<i32>ref( i32(1) ))
-
     ) 
 
     (func $ws/onmessage<ref>
@@ -196,17 +179,31 @@
         )
     ) 
 
+    (func (export "onremotewindow")
+
+    )
+
     (func $ws/onbuffermessage<ref>
         (param $buffer <ArrayBuffer>)
         (local $offset i32)
+        (local $window ref)
+
         (warn<refx2> text("ws got buffer message") local($buffer))
-        (local #offset $malloc( $ArrayBuffer:byteLength( this ) ))
 
-        (log <i32> local($offset))
 
-        
+        $dispatchEvent(
+            $WindowEvent:new( 
+                $wasm.Window:new(
+                    $malloc( 
+                        $ArrayBuffer:byteLength( 
+                            this 
+                        ) 
+                    )
+                )
+            )
+        )
+
     ) 
-
 
     (on $message<ref>
         (param $this             <MessageEvent>)
@@ -221,7 +218,6 @@
 
     (func $onbuffermessage<ref>
         (param $buffer                  <Buffer>)
-
         (log this)
     )
 

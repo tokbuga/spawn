@@ -1,17 +1,8 @@
-<html>
-    <script>WebAssembly.instantiateStreaming(fetch("boot.wasm"), self)</script>
-    <body></body>
-    <script>
-    setTimeout(function () {
-        const buffer = new ArrayBuffer(48);
-        const dview = new DataView(buffer);
-        const aview = new Uint8Array(buffer);
-
-        aview.set( self.uuid, 4 )
-
-        postMessage( buffer )
-
-        console.log(dview)
-    }, 2e2)
-    </script>
-</html>
+<script>WebAssembly.instantiateStreaming(fetch("boot.wasm"), self)</script>
+<script>
+    addEventListener( "window", e => {
+        console.log(e)
+        const window = e.target;
+        console.log(window)
+    })
+</script>

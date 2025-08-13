@@ -149,6 +149,18 @@
         )
     )
 
+    (func $Array.of<refx4>ref 
+        (param $value/0                                ref) 
+        (param $value/1                                ref) 
+        (param $value/2                                ref) 
+        (param $value/3                                ref) 
+        (result $this                              <Array>) 
+
+        (call $self.Array.of<refx4>ref
+            local($value/0) local($value/1) local($value/2) local($value/3)
+        )
+    )
+
     (func $Array.of<ref.i32>ref 
         (param $value/0                                ref) 
         (param $value/1                                i32) 

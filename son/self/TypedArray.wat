@@ -3,6 +3,12 @@
     (alias $Float64Array.of                       $Float64Array.of<i32>ref)
     (alias $Float64Array.from                   $Float64Array.from<ref>ref)
     
+    (alias $Float32Array:new                     $Float32Array:new<ref>ref)
+    (alias $Float32Array.of                       $Float32Array.of<i32>ref)
+    (alias $Float32Array.from                   $Float32Array.from<ref>ref)
+    (alias $Float32Array:map<ref.fun>ref       $TypedArray:map<ref.fun>ref)
+    (alias $Float32Array:map<refx2>ref           $TypedArray:map<refx2>ref)
+    
     (alias $BigUint64Array:new                 $BigUint64Array:new<ref>ref)
     (alias $BigUint64Array.of                   $BigUint64Array.of<i32>ref)
     (alias $BigUint64Array.from               $BigUint64Array.from<ref>ref)
@@ -15,6 +21,8 @@
     (alias $Uint8Array.from                       $Uint8Array.from<ref>ref)
     
     (alias $TypedArray:buffer                   $TypedArray:buffer<ref>ref)
+    (alias $TypedArray:fill                   $TypedArray:fill<ref.i32>ref)
+    (alias $TypedArray:map                     $TypedArray:map<ref.fun>ref)
 
     (alias $Uint8Array:buffer<ref>ref           $TypedArray:buffer<ref>ref)
     (alias $Uint32Array:buffer<ref>ref          $TypedArray:buffer<ref>ref)
@@ -33,6 +41,20 @@
         (result $this                       <Float64Array>) 
 
         (new $self.Float64Array<ref>ref local($buffer)) 
+    )
+
+    (func $Float32Array:new<i32>ref 
+        (param $length                                 i32) 
+        (result $this                       <Float32Array>) 
+
+        (new $self.Float32Array<i32>ref local($length)) 
+    )
+
+    (func $Float32Array:new<ref>ref 
+        (param $buffer                            <Buffer>) 
+        (result $this                       <Float32Array>) 
+
+        (new $self.Float32Array<ref>ref local($buffer)) 
     )
 
     (func $BigUint64Array:new<i32>ref 
@@ -148,6 +170,36 @@
 
         (apply $self.Uint8Array:__proto__.at<i32>i64 
             this (param local($index))
+        )
+    )
+
+    (func $TypedArray:fill<ref.i32>ref
+        (param $this                          <TypedArray>) 
+        (param $value                                  i32) 
+        (result $this                         <TypedArray>) 
+
+        (apply $self.Uint8Array:__proto__.fill<i32>ref 
+            this (param local($value))
+        )
+    )
+
+    (func $TypedArray:map<ref.fun>ref
+        (param $this                          <TypedArray>) 
+        (param $callback                           funcref) 
+        (result $this                         <TypedArray>) 
+
+        (apply $self.Uint8Array:__proto__.map<fun>ref 
+            this (param local($callback))
+        )
+    )
+
+    (func $TypedArray:map<refx2>ref
+        (param $this                          <TypedArray>) 
+        (param $callback                        <Function>) 
+        (result $this                         <TypedArray>) 
+
+        (apply $self.Uint8Array:__proto__.map<ref>ref 
+            this (param local($callback))
         )
     )
 

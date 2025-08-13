@@ -30,6 +30,16 @@
         )
     )
 
+    (func $String:charCodeAt<ref.i32>i32 
+        (param $text                               <string>) 
+        (param $index                                   i32) 
+        (result $charCode                               i32) 
+
+        (apply $self.String:charCodeAt<i32>i32
+            this (param local($index))
+        )
+    )
+
     (func $String:padStart<ref.i32x2>ref 
         (param $text                               <string>) 
         (param $length                                  i32) 

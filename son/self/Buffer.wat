@@ -1,4 +1,13 @@
 
+    (alias $Buffer.isBuffer          $Buffer.isBuffer<ref>i32)
+
+    (func $Buffer.isBuffer<ref>i32 
+        (param $this                                 <Object>) 
+        (result $is                                       i32) 
+
+        (i32.ne false (get <refx2>i32 this text("maxByteLength")))
+    )
+
     (func $Buffer:writeInt32LE<ref.i32x2> 
         (param $this                                 <Buffer>) 
         (param $offset                                    i32) 
