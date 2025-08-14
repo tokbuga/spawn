@@ -1,4 +1,6 @@
 
+    (alias $File:name                   $File:name<ref>ref)
+
     (func $File:name<ref>ref 
         (param $this                                <File>) 
         (result $name                             <String>)

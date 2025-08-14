@@ -11,3 +11,13 @@
         (apply $self.Blob:type/get this externref)
     )
 
+
+    (alias $Blob:new        $Blob:new<ref>ref)
+
+
+    (func $Blob:new<ref>ref 
+        (param $content                            <Array>) 
+        (result $this                               <Blob>)
+        (new $self.Blob<ref>ref this)
+    )
+

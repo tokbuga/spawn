@@ -1,8 +1,4 @@
-<script>WebAssembly.instantiateStreaming(fetch("boot.wasm"), self)</script>
-<script>
-    addEventListener( "window", e => {
-        console.log(e)
-        const window = e.target;
-        console.log(window)
-    })
+<script src="boot.js">
+    console.log(window)
+    
 </script>

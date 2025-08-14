@@ -1,5 +1,6 @@
 
     (alias $String:new                   $String:new<ref>ref)
+    (alias $String:replace         $String:replace<refx3>ref)
 
     (func $String:new<>ref 
         (result $this                              <String>) 
@@ -27,6 +28,17 @@
 
         (apply $self.String:match<ref>ref
             this (param local($regexp))
+        )
+    )
+
+    (func $String:replace<refx3>ref 
+        (param $text                               <String>) 
+        (param $search                             <String>) 
+        (param $replace                            <String>) 
+        (result $string                            <String>) 
+
+        (apply $self.String:replace<refx2>ref
+            this (param local($search) local($replace))
         )
     )
 

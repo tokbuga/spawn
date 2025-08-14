@@ -2,6 +2,7 @@
     (import "self" "memory"     (memory $memory 10 10 shared))
     (import "self" "memory"     (global $memory externref))
     (import "memory" "buffer"   (global $buffer externref))
+    (import "self" "userScript" (global $userScript externref))
 
     (alias $ref $ref<ref>i32)
     (alias $ref.count $ref.count<>i32)
@@ -20,12 +21,15 @@
     (include "self/Number.wat")
     (include "self/TypedArray.wat")
     (include "self/Event.wat")
+    (include "self/Blob.wat")
+    (include "self/URL.wat")
     (include "self/MessageEvent.wat")
     (include "self/Buffer.wat")
     (include "self/DataView.wat")
     (include "self/ArrayBuffer.wat")
     (include "self/WebSocket.wat")
     (include "self/Window.wat")
+    (include "self/Worker.wat")
     (include "self/CustomEvent.wat")
     (include "self/EventTarget.wat")
 
@@ -183,6 +187,18 @@
 
     )
 
+    (global $userScriptURL mut extern)
+    (global $userScriptWorker mut extern)
+
+    (global $moduleWorkerScript "
+    addEventListener( 'message', e => {
+        const memory = e.data ;
+        const window = new class Window extends Number {} ( 184 ) ;
+
+        $USER_SCRIPT
+    })
+    ")
+
     (func $ws/onbuffermessage<ref>
         (param $buffer <ArrayBuffer>)
         (local $offset i32)
@@ -190,6 +206,31 @@
 
         (warn<refx2> text("ws got buffer message") local($buffer))
 
+
+        global($userScriptURL
+            $URL.createObjectURL(
+                $Blob:new(
+                    $Array:new(
+                        $String:replace(
+                            global($moduleWorkerScript)
+                            text("$USER_SCRIPT")
+                            global($userScript)
+                        )
+                    )
+                )
+            )
+        )
+
+        global($userScriptWorker 
+            $Worker:new( 
+                global($userScriptURL) 
+            )
+        )
+
+        $Worker:postMessage(
+            global($userScriptWorker)
+            global($memory)
+        )
 
         $dispatchEvent(
             $WindowEvent:new( 
@@ -387,7 +428,7 @@
         (local $this <Array>)
         (local $count i32)
 
-        (local #this $Array:new())
+        (local #this $Array:new<>ref())
 
         (if (local.tee $count $ref.count())
             (then
@@ -460,7 +501,7 @@
         (result $json <Object>)
         (local $entries <Object>)
 
-        (local #entries $Array:new())
+        (local #entries $Array:new<>ref())
 
         local($entries)x5
 

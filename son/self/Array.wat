@@ -1,5 +1,5 @@
 
-    (alias $Array:new                      $Array:new<>ref)
+    (alias $Array:new                   $Array:new<ref>ref)
     (alias $Array.of                     $Array.of<ref>ref)
     (alias $Array.of<ref.ref>ref       $Array.of<refx2>ref)
     (alias $Array.from                 $Array.from<ref>ref)

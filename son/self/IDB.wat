@@ -1,4 +1,6 @@
 
+    (alias $IDBRequest:result    $IDBRequest:result<ref>ref)
+
     (global $IDBReadyState:OPEN                  i32 i32(1))
     (global $IDBReadyState:CLOSED                i32 i32(0))
 
@@ -19,8 +21,6 @@
     (global $self.IDBFactory:databases                  ref)
     (global $self.IDBFactory:deleteDatabase             ref)
     
-    (global $self.Event:type/get                        ref)
-
     (global $self.IDBRequest                            ref)
     (global $self.IDBRequest:readyState/get             ref)
 
@@ -290,4 +290,55 @@
         )
     )
 
+    (alias $IndexedDB:put $IndexedDB:put<refx4>ref)
 
+    (func $IndexedDB:put<refx4>ref
+        (param $db               <IndexedDB>)
+        (param $data                   <Any>)
+        (param $key                 <String>)
+        (param $objectStoreName     <String>)
+        (result                 <IDBRequest>)
+
+        $IDBObjectStore:put<refx3>ref(
+            $IDBTransaction:objectStore<refx2>ref(
+                $IDBDatabase:transaction<refx2>ref(
+                    local($db) 
+                    local($objectStoreName)
+                )
+                local($objectStoreName)
+            )
+            local($data) 
+            local($key)
+        )
+    )
+
+
+    (alias $IndexedDB:get   $IndexedDB:get<refx3>ref)
+    (func $IndexedDB:get<refx3>ref
+        (param $db               <IndexedDB>)
+        (param $key                 <String>)
+        (param $objectStoreName     <String>)
+        (result                 <IDBRequest>)
+
+        (local $transaction <IDBTransaction>)
+        (local $objectStore <IDBObjectStore>)
+    
+        (local.set $transaction
+            $IDBDatabase:transaction<refx2>ref(
+                local($db) 
+                local($objectStoreName)
+            )
+        )
+
+        (local.set $objectStore
+            $IDBTransaction:objectStore<refx2>ref(
+                local($transaction)
+                local($objectStoreName)
+            )
+        )
+
+        $IDBObjectStore:get<refx2>ref(
+            local($objectStore) 
+            local($key)
+        )
+    )

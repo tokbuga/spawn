@@ -1,4 +1,7 @@
 
+    (alias $Event:preventDefault        $Event:preventDefault<ref>)
+    (alias $Event:target                 $Event:target/get<ref>ref)
+
     (global $Event.LENGTH                      i32 i32(24))
     (global $Event.HDRLEN                      i32 i32(24))
 

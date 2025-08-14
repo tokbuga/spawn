@@ -27,17 +27,28 @@
     (include "self/WebSocket.wat")
     (include "self/Window.wat")
     (include "self/CustomEvent.wat")
+    (include "self/MouseEvent.wat")
+    (include "self/UIEvent.wat")
     (include "self/EventTarget.wat")
-    
+    (include "self/DragEvent.wat")
+    (include "self/DataTransfer.wat")
+    (include "self/DataTransferItem.wat")
+    (include "self/DataTransferItemList.wat")
+    (include "self/IDB.wat")
+    (include "self/File.wat")
+
     (include "wasm/Window.wat")
 
     (include "core/wasm.wat")
     (include "core/self.wat")
     (include "core/console.wat")
     (include "core/uuid.wat")
+    (include "core/drop.wat")
 
     (global $weak<Map> new WeakMap)
     (global $view<Memory> mut extern)
+
+
 
     (table $ref 1 65536 externref)
 
@@ -68,6 +79,8 @@
 
     (start $main
         (warn <ref> text("ref device loaded!"))
+
+        $uploads.open()
 
         drop($malloc(i32(16)))
 
@@ -129,6 +142,7 @@
         (warn <i32>)
 
         $ws();
+
 
 
         (; $ps.ALIGN_DB_ALLOCATIONS ;)
@@ -202,11 +216,58 @@
         (warn<refx2> text("ws got buffer message") local($buffer))
         (local #offset $malloc( $ArrayBuffer:byteLength( this ) ))
 
-        (log <i32> local($offset))
-
-        
+        (log <i32> local($offset))        
     ) 
 
+    (on $dragover<reF> 
+        (param $event <DragEvent>) 
+        (call $Event:preventDefault<ref> this)
+    )
+
+    (on $drop<reF> 
+        (param $this                <DragEvent>) 
+        (local $dataTransfer     <DataTransfer>)
+        (local $items    <DataTransferItemList>)
+        (local $length                      i32)
+        (local $item/i       <DataTransferItem>)
+        (local $file/i                   <File>)
+        
+        $Event:preventDefault( this )
+
+        local($dataTransfer                 $DragEvent:dataTransfer( this ))
+        local($items            $DataTransfer:items( local($dataTransfer) ))
+        local($length         $DataTransferItemList:length( local($items) ))
+
+        (if local($length) 
+            (then 
+            (loop $length--
+
+                (local #length local($length)--)
+                
+                (local #item/i     
+                    $DataTransferItemList:get( 
+                        local($items) 
+                        local($length)
+                    )
+                )
+
+                (local #file/i     
+                    $DataTransferItem:getAsFile( 
+                        local($item/i)
+                    )
+                )
+
+                $uploads.store<ref.funx2>(
+                    local($file/i) 
+                    func($onstoreuploadsuccess<ref>)
+                    func($onstoreuploaderror<ref>)
+                )
+
+                (br_if $length-- local($length))
+
+            ))
+        )
+    )
 
     (on $message<ref>
         (param $this             <MessageEvent>)
@@ -391,7 +452,7 @@
         (local $this <Array>)
         (local $count i32)
 
-        (local #this $Array:new())
+        (local #this $Array:new<>ref())
 
         (if (local.tee $count $ref.count())
             (then
@@ -464,7 +525,7 @@
         (result $json <Object>)
         (local $entries <Object>)
 
-        (local #entries $Array:new())
+        (local #entries $Array:new<>ref())
 
         local($entries)x5
 
@@ -634,4 +695,9 @@
             global($weak<Map>) local($value) 
         )
     )
+
+
+
+
+
 )

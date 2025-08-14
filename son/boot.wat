@@ -28,9 +28,12 @@
     (start $boot
         global($memory $Memory:new<i32x3>ref( i32(10) i32(10) true ) )
         global($buffer $Memory:buffer( global($memory) ) )
-        global($assign $Object.fromKeyValue<refx2>ref(
-            text("memory") global($memory)
+        global($assign $Object.fromEntries<ref>ref(
+            $Array.of<ref>ref(
+                $Array.of<ref.ref>ref( text("memory") global($memory) )
+            )
         ))
+
 
         (if (i32.eqz $isUuidString( global($self.name) ))
             (then (set <refx3> self text("name") $randomUUID<>ref()))
@@ -41,7 +44,6 @@
             (else $wasm:ref<ref>( global($assign) ) )
         )
     )
-
 
     (data $wasm:ref "wasm://ref.wat")
     (data $wasm:mac "wasm://mac.wat")
