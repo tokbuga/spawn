@@ -36,6 +36,7 @@
     (include "self/DataTransferItemList.wat")
     (include "self/IDB.wat")
     (include "self/File.wat")
+    (include "self/Worker.wat")
 
     (include "wasm/Window.wat")
 

@@ -3,6 +3,8 @@
     (alias $Array.of                     $Array.of<ref>ref)
     (alias $Array.of<ref.ref>ref       $Array.of<refx2>ref)
     (alias $Array.from                 $Array.from<ref>ref)
+    (alias $Array:push                  $Array:push<refx2>)
+    (alias $Array:append           $Array:append<refx2>ref)
     (alias $Array:reverse              $Array:reverse<ref>)
     (alias $Array:unshift            $Array:unshift<refx2>)
 
@@ -87,7 +89,7 @@
         (param $item                                   ref) 
         (result $this                              <Array>) 
 
-        $Array:push<refx2>( this local($item) ) local($this)
+        $Array:push<refx2>( this local($item) ) local($item)
     )
 
     (func $Array:splice<ref.i32x2.ref> 
