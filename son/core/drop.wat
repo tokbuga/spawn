@@ -2,6 +2,7 @@
     (global $idb.uploads/tmp mut extern)
 
     ;;indexedDB.open("fs").onupgradeneeded = e => e.target.result.createObjectStore("uploads", { keyPath: "path" });
+    
     (func $uploads.open 
         (local $idbOpenDBRequest <IDBOpenDBRequest>)
         
@@ -20,6 +21,7 @@
                         $Event:target( this )
                     )
                 )
+                (call $onuploadsopen)
             )   
         )
 
@@ -67,6 +69,8 @@
         $IDBRequest:onsuccess<ref.fun>( local($idbRequest) local($onsuccess) )
     )
 
+    (alias $uploads.load  $uploads.load<ref.funx2>)
+
     (func $uploads.load<ref.funx2>
         (param $name                      <String>)
         (param $onsuccess                  funcref)
@@ -83,7 +87,6 @@
 
         $IDBRequest:onerror<ref.fun>( local($idbRequest) local($onerror) )
         $IDBRequest:onsuccess<ref.fun>( local($idbRequest) local($onsuccess) )
-
     )
 
     (func $onloaduploadsuccess<ref>

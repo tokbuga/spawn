@@ -1,5 +1,16 @@
     (global $MOUSE_HDRLEN i32 i32(80))
     (global $LOCAL_MOUSE_EVENT_COUNT mut i32)
+    (global $LOCAL_MOUSE_LAST_EVENT_TYPE mut i32)
+
+    (global $TYPE.EVENT_POINTER_MOVE          i32 i32(1))
+    (global $TYPE.EVENT_POINTER_DOWN          i32 i32(2))
+    (global $TYPE.EVENT_POINTER_CANCEL        i32 i32(3))
+    (global $TYPE.EVENT_POINTER_ENTER         i32 i32(4))
+    (global $TYPE.EVENT_POINTER_LEAVE         i32 i32(5))
+    (global $TYPE.EVENT_POINTER_OUT           i32 i32(6))
+    (global $TYPE.EVENT_POINTER_OVER          i32 i32(7))
+    (global $TYPE.EVENT_POINTER_UP            i32 i32(8))
+    (global $TYPE.EVENT_POINTER_CONTEXT_MENU  i32 i32(9))
 
     (alias $mouse.altKey                  $mouse.altKey<>i32)
     (alias $mouse.ctrlKey                $mouse.ctrlKey<>i32)
@@ -26,6 +37,7 @@
     (alias $mouse.isOver                  $mouse.isOver<>i32)
     (alias $mouse.isUp                      $mouse.isUp<>i32)
     (alias $mouse.isContextMenu    $mouse.isContextMenu<>i32)
+    (alias $mouse.lastEventType    $mouse.lastEventType<>i32)
 
     (alias $mouse.eventCount          $mouse.eventCount<>i32)
     (alias $mouse.hasnew                  $mouse.hasnew<>i32)
@@ -54,6 +66,7 @@
     (func $mouse.isOver<>i32            (result i32) (i32.load8_u offset=66 global($MOUSE_OFFSET)))
     (func $mouse.isUp<>i32              (result i32) (i32.load8_u offset=67 global($MOUSE_OFFSET)))
     (func $mouse.isContextMenu<>i32     (result i32) (i32.load8_u offset=68 global($MOUSE_OFFSET)))
+    (func $mouse.lastEventType<>i32     (result i32) (i32.load    offset=72 global($MOUSE_OFFSET)))
     (func $mouse.eventCount<>i32        (result i32) (i32.load    offset=76 global($MOUSE_OFFSET)))
 
     (func $mouse.altKey<i32>            (param i32)  (i32.store   offset=0  global($MOUSE_OFFSET) local(0)))
@@ -80,13 +93,18 @@
     (func $mouse.isOver<i32>            (param i32)  (i32.store8  offset=66 global($MOUSE_OFFSET) local(0)))
     (func $mouse.isUp<i32>              (param i32)  (i32.store8  offset=67 global($MOUSE_OFFSET) local(0)))
     (func $mouse.isContextMenu<i32>     (param i32)  (i32.store8  offset=68 global($MOUSE_OFFSET) local(0)))
+    (func $mouse.lastEventType<i32>     (param i32)  (i32.store   offset=72 global($MOUSE_OFFSET) local(0)))
     (func $mouse.eventCount<i32>        (param i32)  (i32.store   offset=76 global($MOUSE_OFFSET) local(0)))
 
 
-    (global $v128/0 v128 (v128.const i64x2 0 0))
+    (global $v128/0 v128 (v128.const i8x16 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))
 
-    (func $mouse.renew 
+    (func $mouse.renew<i32>
+        (param $lastEventType i32)
         (v128.store offset=60 global($MOUSE_OFFSET) global($v128/0))
+        (memory.atomic.notify offset=72 global($MOUSE_OFFSET) i32(4));
+
+        (i32.store offset=72 global($MOUSE_OFFSET) this)
         (i32.atomic.rmw.add offset=76 global($MOUSE_OFFSET) i32(1));
     )
 

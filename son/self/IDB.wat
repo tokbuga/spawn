@@ -1,5 +1,6 @@
 
     (alias $IDBRequest:result    $IDBRequest:result<ref>ref)
+    (alias $IDBRequest:result    $IDBRequest:result<ref>ref)
 
     (global $IDBReadyState:OPEN                  i32 i32(1))
     (global $IDBReadyState:CLOSED                i32 i32(0))

@@ -23,6 +23,7 @@
     (alias $TypedArray:buffer                   $TypedArray:buffer<ref>ref)
     (alias $TypedArray:fill                   $TypedArray:fill<ref.i32>ref)
     (alias $TypedArray:map                     $TypedArray:map<ref.fun>ref)
+    (alias $TypedArray:set                          $TypedArray:set<refx2>)
 
     (alias $Uint8Array:buffer<ref>ref           $TypedArray:buffer<ref>ref)
     (alias $Uint32Array:buffer<ref>ref          $TypedArray:buffer<ref>ref)
@@ -200,6 +201,15 @@
 
         (apply $self.Uint8Array:__proto__.map<ref>ref 
             this (param local($callback))
+        )
+    )
+
+    (func $TypedArray:set<refx2>
+        (param $typedArray                    <TypedArray>) 
+        (param $valueArray                         <Array>) 
+
+        (apply $self.Uint8Array:__proto__.set<ref> 
+            this (param local($valueArray))
         )
     )
 

@@ -1,3 +1,5 @@
+    (alias $Blob:arrayBuffer     $Blob:arrayBuffer<ref>ref) 
+    (alias $Blob:new                     $Blob:new<ref>ref)
 
     (func $Blob:size<ref>i32 
         (param $this                                <Blob>) 
@@ -12,8 +14,11 @@
     )
 
 
-    (alias $Blob:new        $Blob:new<ref>ref)
-
+    (func $Blob:arrayBuffer<ref>ref 
+        (param $this                                <Blob>) 
+        (result $async                           <Promise>)
+        (apply $self.Blob:arrayBuffer this externref)
+    )
 
     (func $Blob:new<ref>ref 
         (param $content                            <Array>) 

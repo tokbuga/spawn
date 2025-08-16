@@ -1,9 +1,8 @@
 
     (func $onmouseevents<ref> 
-        (param $e <PointerEvent>)
+        (param $event           <PointerEvent>)
 
-        $Event:preventDefault( this )
-        $mouse.renew()
+        $Event:preventDefault( local($event) )
         
         $mouse.button<i32>( $MouseEvent:button( this ) )
         $mouse.altKey<i32>( $MouseEvent:altKey( this ) )
@@ -28,46 +27,105 @@
     )
 
     (on $contextmenu<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_CONTEXT_MENU) )
         $mouse.isContextMenu<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointermove<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_MOVE) )
         $mouse.isMove<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointerdown<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_DOWN) )
         $mouse.isDown<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointercancel<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_CANCEL) )
         $mouse.isCancel<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointerenter<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_ENTER) )
         $mouse.isEnter<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointerleave<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_LEAVE) )
         $mouse.isLeave<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointerout<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_OUT) )
         $mouse.isOut<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointerover<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_OVER) )
         $mouse.isOver<i32>( true )
         $onmouseevents<ref>( this ) 
     )
 
     (on $pointerup<ref> (param ref) 
+        $mouse.renew<i32>( global($TYPE.EVENT_POINTER_UP) )
         $mouse.isUp<i32>( true )
         $onmouseevents<ref>( this ) 
+    )
+
+    (on $dragover<reF> 
+        (param $event <DragEvent>) 
+        (call $Event:preventDefault<ref> this)
+    )
+
+    (on $drop<reF> 
+        (param $this                <DragEvent>) 
+        (local $dataTransfer     <DataTransfer>)
+        (local $items    <DataTransferItemList>)
+        (local $length                      i32)
+        (local $item/i       <DataTransferItem>)
+        (local $file/i                   <File>)
+        
+        $Event:preventDefault( this )
+
+        local($dataTransfer                 $DragEvent:dataTransfer( this ))
+        local($items            $DataTransfer:items( local($dataTransfer) ))
+        local($length         $DataTransferItemList:length( local($items) ))
+
+        (if local($length) 
+            (then 
+            (loop $length--
+
+                (local #length local($length)--)
+                
+                (local #item/i     
+                    $DataTransferItemList:get( 
+                        local($items) 
+                        local($length)
+                    )
+                )
+
+                (local #file/i     
+                    $DataTransferItem:getAsFile( 
+                        local($item/i)
+                    )
+                )
+
+                $uploads.store<ref.funx2>(
+                    local($file/i) 
+                    func($onstoreuploadsuccess<ref>)
+                    func($onstoreuploaderror<ref>)
+                )
+
+                (br_if $length-- local($length))
+
+            ))
+        )
     )

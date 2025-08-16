@@ -25,7 +25,13 @@
     )
 
     (func $render
-        (log <f32> $mouse.clientX() )
+
+        (log <i32x4>
+            $mouse.lastEventType() 
+            $canvas.frameCount()            
+            $canvas.fps()
+            $canvas.epoch()
+        )
     )
 
 )
