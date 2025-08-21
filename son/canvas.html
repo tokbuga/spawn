@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html>
 <meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, height=device-height" />
-<body onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)" style="touch-action: none; overscroll-behavior: none; pointer-events: none;"></body>
+<meta name="apple-mobile-web-app-capable" content="yes" >
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<body onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)" style="touch-action: manipulation; overscroll-behavior: none; pointer-events: none;"></body>
 <script type="x-shader/x-fragment" id="shaders">
     struct VertexOut {
         @builtin( position ) position : vec4f,
@@ -412,11 +415,11 @@
         let viewmat = structuredClone(projection);
         var vArrays = structuredClone(verticeArrays);
 
-        let scale_z = 1 + (scene.delta_z / innerHeight);
+        let scale_z = 1 + (scene.delta_z / (innerHeight/2));
         if (scale_z < 0) { scale_z /= -1;}
 
-        let pan_x = scene.delta_h / -innerWidth; 
-        let pan_y = scene.delta_v / innerHeight; 
+        let pan_x = scene.delta_h / -(innerWidth/2); 
+        let pan_y = scene.delta_v /  (innerHeight/2); 
 
         let angle_x = (((scene.delta_y % innerHeight) / innerHeight) - 0.5) * (Math.PI/1) + Math.PI/-2;
         let angle_y = (((scene.delta_x % innerWidth) / innerWidth) - 0.5) * (Math.PI/1) + Math.PI/2;
@@ -463,27 +466,29 @@
     let start_of_mouse_drag;
 
     onpointerdown = event => {
-        start_of_mouse_drag = event;
         event.preventDefault();
+        start_of_mouse_drag = event;
     }
 
     onpointerup = event => {
-        start_of_mouse_drag = null;
         event.preventDefault();        
+        start_of_mouse_drag = null;
     }
 
-    onwheel = event => { 
+    addEventListener( "wheel", event => { 
+        event.preventDefault();        
+
         scene.delta_h += event.deltaX;
 
         if (Number.isInteger(event.deltaY)) {
             scene.delta_v += event.deltaY;
         }
         else {
-            scene.delta_z += event.deltaY;
+            scene.delta_z -= event.deltaY;
         }
 
         render(); 
-    }
+    }, { passive: false })
 
     onpointermove = event => {
         var delta_x, delta_y, x_limit, y_limit, new_x, new_y;
