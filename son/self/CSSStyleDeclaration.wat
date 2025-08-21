@@ -1,5 +1,5 @@
 
-    (alias $CSSStyleDeclaration:setProperty             $CSSStyleDeclaration:setProperty<refx2.f32>)
+    (alias $CSSStyleDeclaration:setProperty                 $CSSStyleDeclaration:setProperty<refx3>)
     (alias $CSSStyleDeclaration:getPropertyValue    $CSSStyleDeclaration:getPropertyValue<refx2>f32)
     (alias $CSSStyleDeclaration:width                            $CSSStyleDeclaration:width<ref>f32)
     (alias $CSSStyleDeclaration:height                          $CSSStyleDeclaration:height<ref>f32)
@@ -116,25 +116,59 @@
             )
         )
     )
+
     
     (func $CSSStyleDeclaration:width<ref.f32>
         (param $this            <CSSStyleDeclaration>)
-        (param $value                              f32)
+        (param $value                             f32)
 
-        $CSSStyleDeclaration:setProperty( this text("width") local($value) )
+        $CSSStyleDeclaration:width<refx2>( this $CSS.px(local($value)) )
     )
+
     
     (func $CSSStyleDeclaration:height<ref.f32>
         (param $this            <CSSStyleDeclaration>)
         (param $value                             f32)
 
-        $CSSStyleDeclaration:setProperty( this text("height") local($value) )
+        $CSSStyleDeclaration:height<refx2>( this $CSS.px(local($value)) )
     )
     
     (func $CSSStyleDeclaration:margin<ref.f32>
         (param $this            <CSSStyleDeclaration>)
         (param $value                             f32)
 
-        $CSSStyleDeclaration:setProperty( this text("margin") local($value) )
+        $CSSStyleDeclaration:margin<refx2>( this $CSS.px(local($value)) )
     )
     
+    (func $CSSStyleDeclaration:width<refx2>
+        (param $this            <CSSStyleDeclaration>)
+        (param $value                  <CSSUnitValue>)
+
+        $CSSStyleDeclaration:setProperty( this text("width") local($value) )
+    )
+
+    (func $CSSStyleDeclaration:height<refx2>
+        (param $this            <CSSStyleDeclaration>)
+        (param $value                  <CSSUnitValue>)
+
+        $CSSStyleDeclaration:setProperty( this text("height") local($value) )
+    )
+
+    (func $CSSStyleDeclaration:margin<refx2>
+        (param $this            <CSSStyleDeclaration>)
+        (param $value                  <CSSUnitValue>)
+
+        $CSSStyleDeclaration:setProperty( this text("margin") local($value) )
+    )
+
+    (global $CSSStyleDeclaration.positionName.FIXED "fixed")
+    (global $CSSStyleDeclaration.positionName.STATIC "static")
+    (global $CSSStyleDeclaration.positionName.RELATIVE "relative")
+    (global $CSSStyleDeclaration.positionName.ABSOLUTE "absoulte")
+
+    (func $CSSStyleDeclaration:position<refx2>
+        (param $this            <CSSStyleDeclaration>)
+        (param $value                        <String>)
+
+        $CSSStyleDeclaration:setProperty( this text("position") local($value) )
+    )

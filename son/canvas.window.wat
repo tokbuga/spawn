@@ -34,6 +34,7 @@
     (include "self/HTMLElement.wat")
     (include "self/HTMLCanvasElement.wat")
     (include "self/CSSStyleDeclaration.wat")
+    (include "self/CSS.wat")
     (include "self/Crypto.wat")
     (include "self/DragEvent.wat")
     (include "self/DataTransfer.wat")
@@ -48,6 +49,7 @@
     (include "self/Number.wat")
     (include "self/Math.wat")
     (include "self/ArrayBuffer.wat")
+    (include "self/Node.wat")
 
     (include "canvas/main.wat")
     (include "canvas/mouse.wat")
@@ -65,8 +67,12 @@
     (global $workerURL          mut extern)
     (global $workerData         new Object)
     (global $canvas             mut extern)
+    (global $html.style         mut extern)
     (global $body.style         mut extern)
     (global $canvas.style       mut extern)
+
+    (global $self.innerWidth    f32)
+    (global $self.innerHeight    f32)
 
     (global $MEMORY_HDRLEN     i32 i32(48))
 
@@ -177,8 +183,8 @@
         
         $screen.devicePixelRatio<f32>( global($self.devicePixelRatio) )
         
-        $canvas.clientWidth<f32>( $Element:clientWidth( global($self.document.body) ) )
-        $canvas.clientHeight<f32>( $Element:clientHeight( global($self.document.body) ) )
+        $canvas.clientWidth<f32>( global($self.innerWidth) )
+        $canvas.clientHeight<f32>( global($self.innerHeight)  )
         
         $canvas.width<f32>( (f32.mul $canvas.clientWidth() $screen.devicePixelRatio()) )
         $canvas.height<f32>( (f32.mul $canvas.clientHeight() $screen.devicePixelRatio()) )
@@ -191,12 +197,20 @@
         $HTMLCanvasElement:width<ref.f32>( $canvas.width() )
         $HTMLCanvasElement:height<ref.f32>( $canvas.height() )    
 
-        global($canvas.style)x2
-        $CSSStyleDeclaration:width<ref.f32>( $canvas.clientWidth() )
-        $CSSStyleDeclaration:height<ref.f32>( $canvas.clientHeight() )
+        global($canvas.style)x3
+        $CSSStyleDeclaration:width<refx2>( $CSS.px( $canvas.clientWidth() ) )
+        $CSSStyleDeclaration:height<refx2>( $CSS.px( $canvas.clientHeight() ) )
+        $CSSStyleDeclaration:position<refx2>( 
+            global($CSSStyleDeclaration.positionName.FIXED)
+        )
         
-        global($body.style)
-        $CSSStyleDeclaration:margin<ref.f32>( f32(0) )
+        global($html.style)
+        $CSSStyleDeclaration:height<refx2>( $CSS.vh(f32(100)) )
+
+        global($body.style)x3
+        $CSSStyleDeclaration:margin<refx2>( $CSS.px(f32(0)) )
+        $CSSStyleDeclaration:height<refx2>( $CSS.vh(f32(100)) )
+        $CSSStyleDeclaration:width<refx2>( $CSS.vw(f32(100)) )
     )
 
     (func $create
@@ -218,11 +232,19 @@
             )
         )
 
+        global($html.style
+            $HTMLElement:style(
+                $Node:parentElement(
+                    global($self.document.body)
+                )
+            )
+        )
+
         global($canvas.style
             $HTMLElement:style(
                 global($canvas)
             )
-        )        
+        )     
     )
 
     (func $fork

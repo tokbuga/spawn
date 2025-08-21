@@ -1,1 +1,516 @@
-<body onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)"></body>
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, height=device-height" />
+<body onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)" style="touch-action: none; overscroll-behavior: none; pointer-events: none;"></body>
+<script type="x-shader/x-fragment" id="shaders">
+    struct VertexOut {
+        @builtin( position ) position : vec4f,
+        @location(0) color : vec4f
+    }
+
+    @vertex 
+    fn vertex_main(
+        @location(0) positionX  : f32,
+        @location(1) positionY  : f32,
+        @location(2) positionZ  : f32,
+        @location(3) positionW  : f32,
+        @location(4) colorR     : f32,
+        @location(5) colorG     : f32,
+        @location(6) colorB     : f32,
+        @location(7) colorA     : f32,
+    ) -> VertexOut
+    {
+        var output : VertexOut;
+
+        output.position.x = positionX;
+        output.position.y = positionY;
+        output.position.z = positionZ;
+        output.position.w = positionW;
+
+        output.color.r    = colorR;
+        output.color.g    = colorG;
+        output.color.b    = colorB;
+        output.color.a    = colorA;
+
+        return output;
+    }
+
+    @fragment
+    fn fragment_main(fragData: VertexOut) -> @location(0) vec4f
+    {
+        return fragData.color;
+    }
+</script>
+<script type="module">
+    function toRadians (angleInDegrees) {
+        return angleInDegrees * 0.017453292519943295;  // Math.PI / 180
+    };
+
+    function setIdentity (M) {
+        M[0] = 1;  M[4] = 0;  M[8] = 0;  M[12] = 0;
+        M[1] = 0;  M[5] = 1;  M[9] = 0;  M[13] = 0;
+        M[2] = 0;  M[6] = 0;  M[10] = 1; M[14] = 0;
+        M[3] = 0;  M[7] = 0;  M[11] = 0; M[15] = 1;
+
+        return M;
+    };
+
+    function perspective(fovy, aspect, near, far) {
+        var M = new Array(16);
+
+        if (fovy <= 0 || fovy >= 180 || aspect <= 0 || near >= far || near <= 0) {
+            console.log('Invalid parameters to createPerspective');
+            setIdentity(M);
+        }
+
+        var half_fovy   = toRadians(fovy) / 2;
+        var top         = near * Math.tan(half_fovy);
+        var bottom      = -top;
+        var right       = top * aspect;
+        var left        = -right;
+
+        var sx = (2 * near) / (right - left);
+        var sy = (2 * near) / (top - bottom);
+
+        var c2 = 0 - (far + near) / (far - near);
+        var c1 = 2 * (near * far) / (near - far);
+
+        var tx = -near * (left + right) / (right - left);
+        var ty = -near * (bottom + top) / (top - bottom);
+
+        M[ 0] = sx;   M[ 4] = .0;   M[ 8] = .0;   M[12] = tx;
+        M[ 1] = .0;   M[ 5] = sy;   M[ 9] = .0;   M[13] = ty;
+        M[ 2] = .0;   M[ 6] = .0;   M[10] = c2;   M[14] = c1;
+        M[ 3] = .0;   M[ 7] = .0;   M[11] = -1;   M[15] = .0;
+
+        return M;
+    }
+    /** -----------------------------------------------------------------
+     * Set a perspective projection matrix based on limits of a frustum.
+     * @param left   Number Farthest left on the x-axis
+     * @param right  Number Farthest right on the x-axis
+     * @param bottom Number Farthest down on the y-axis
+     * @param top    Number Farthest up on the y-axis
+     * @param near   Number Distance to the near clipping plane along the -Z axis
+     * @param far    Number Distance to the far clipping plane along the -Z axis
+     * @return Float32Array A perspective transformation matrix
+     */
+    const near      = 0.001;
+    const far       = 10000;
+    const fovy      = 90;
+    const aspect    = innerWidth/innerHeight;
+
+    let projection  = perspective(
+        fovy, aspect, near, far
+    );
+
+    await new Promise(d => setTimeout(d, 100));
+
+    const filename  = "1.3_OLED_IIC_128x64.STL" && "CaseV1.STL";
+    const adapter   = await navigator.gpu.requestAdapter();
+    const device    = await adapter.requestDevice();
+    const canvas    = document.querySelector("canvas");
+    const context   = canvas.getContext("webgpu");
+    const buffer    = await new Promise(done => indexedDB.open("tmp").onsuccess = e => e.target.result.transaction("uploads").objectStore("uploads").get(filename).onsuccess = s => s.target.result.arrayBuffer().then(b => b.slice(80)).then(done));
+    const view      = new DataView(buffer);
+    const tcount    = view.getUint32(0, true);
+    const vertices  = new Float32Array( tcount * 3 * 8 );
+    const vertsView = new DataView( vertices.buffer );
+    const readLen   = view.byteLength;
+
+    let t = 0;
+    let read_offset = 0;
+    let write_offset = -4;
+    const R=1, G=1, B=0;
+    const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 };
+
+    while (read_offset < readLen) {
+        //skip normals
+        read_offset += 12;
+
+        //vertices1 - X Y Z
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+
+        //vertices1 - W R G B A
+        vertsView.setFloat32( write_offset += 4, 1, true ); 
+        vertsView.setFloat32( write_offset += 4, R, true ); 
+        vertsView.setFloat32( write_offset += 4, G, true ); 
+        vertsView.setFloat32( write_offset += 4, B, true ); 
+        vertsView.setFloat32( write_offset += 4, 1, true ); 
+
+        //vertices2 - X Y Z
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+
+        //vertices2 - W R G B A
+        vertsView.setFloat32( write_offset += 4, 1, true ); 
+        vertsView.setFloat32( write_offset += 4, R, true ); 
+        vertsView.setFloat32( write_offset += 4, G, true ); 
+        vertsView.setFloat32( write_offset += 4, B, true ); 
+        vertsView.setFloat32( write_offset += 4, 1, true ); 
+
+
+        //vertices3 - X Y Z
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+
+        //vertices3 - W R G B A
+        vertsView.setFloat32( write_offset += 4, 1, true ); 
+        vertsView.setFloat32( write_offset += 4, R, true ); 
+        vertsView.setFloat32( write_offset += 4, G, true ); 
+        vertsView.setFloat32( write_offset += 4, B, true ); 
+        vertsView.setFloat32( write_offset += 4, 1, true ); 
+
+        //attribs byte length
+        read_offset += 2;
+
+        if ((read_offset + 50) >= readLen) {
+            break
+        }
+    }
+
+
+    context.configure({
+        device,
+        format: navigator.gpu.getPreferredCanvasFormat(),
+        alphaMode: "premultiplied",
+    });
+
+    const shaderModule = device.createShaderModule({
+        code: shaders.text,
+    });
+
+    const vertexBuffers = [
+        { attributes: [ { shaderLocation : 0, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        { attributes: [ { shaderLocation : 1, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        { attributes: [ { shaderLocation : 2, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        { attributes: [ { shaderLocation : 3, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        { attributes: [ { shaderLocation : 4, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        { attributes: [ { shaderLocation : 5, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        { attributes: [ { shaderLocation : 6, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        { attributes: [ { shaderLocation : 7, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+    ];
+
+    const pipelineDescriptor = {
+        vertex: {
+            module      : shaderModule,
+            entryPoint  : "vertex_main",
+            buffers     : vertexBuffers,
+        },
+        fragment        : {
+            module      : shaderModule,
+            entryPoint  : "fragment_main",
+            targets     : [
+                {
+                    format: navigator.gpu.getPreferredCanvasFormat(),
+                },
+            ],
+        },
+        primitive       : {
+            topology    : "triangle-list",
+        },
+        layout          : "auto",
+        label           : "triangle-list-toplogy"
+    };
+
+    const renderPipeline = device.createRenderPipeline(pipelineDescriptor);
+
+    const attributeBufferDescriptors = "X Y Z W R G B A".split(" ").map(label =>
+        Object({ 
+            label   : label, 
+            size    : vertices.byteLength/8,
+            usage   : GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        }) 
+    );
+
+    const verticeArrays = [
+        new Float32Array( vertices.length/8 ),
+        new Float32Array( vertices.length/8 ),
+        new Float32Array( vertices.length/8 ),
+        new Float32Array( vertices.length/8 ),
+        new Float32Array( vertices.length/8 ),
+        new Float32Array( vertices.length/8 ),
+        new Float32Array( vertices.length/8 ),
+        new Float32Array( vertices.length/8 ),
+    ];
+
+    let i = 0;
+    while (i < vertices.length) {
+        const j = i%8, k = Math.floor(i/8);
+        verticeArrays[j][k] = vertices[i];
+        i++;
+    }
+
+
+    const maxX = Math.max.apply( null, verticeArrays[0] );
+    const maxY = Math.max.apply( null, verticeArrays[1] );
+    const maxZ = Math.max.apply( null, verticeArrays[2] );
+
+    const minX = Math.min.apply( null, verticeArrays[0] );
+    const minY = Math.min.apply( null, verticeArrays[1] );
+    const minZ = Math.min.apply( null, verticeArrays[2] );
+
+    const fwhX = (maxX - minX) / 2;
+    const fwhY = (maxY - minY) / 2;
+    const fwhZ = (maxZ - minZ) / 2;
+
+    const midX = (0 - maxX) + fwhX; 
+    const midY = (0 - maxY) + fwhY; 
+    const midZ = (0 - maxZ) + fwhZ; 
+
+    verticeArrays[0].forEach( (v,i) => verticeArrays[0][i] = (v + midX)/maxX )
+    verticeArrays[1].forEach( (v,i) => verticeArrays[1][i] = (v + midY)/maxY )
+    verticeArrays[2].forEach( (v,i) => verticeArrays[2][i] = (v + midZ)/maxZ )
+
+    const verticeArrayBuffers = verticeArrays.map((varray, i) => 
+        device.createBuffer(attributeBufferDescriptors[i])
+    );
+
+    const mul_matrix_vecs = ( matrix, vecArrays ) => {
+        
+        const len = vecArrays[0].length;
+        const [ vecXArray, vecYArray, vecZArray, vecWArray ] = vecArrays;
+        
+        const [ 
+            a, b, c, d, 
+            e, f, g, h, 
+            i, j, k, l, 
+            m, n, o, p 
+        ] = matrix;
+
+        let index = 0;
+        while (index < len) {
+
+            const [ x, y, z, w ] = [ vecXArray[index], vecYArray[index], vecZArray[index], vecWArray[index] ];
+
+            vecXArray[ index ] = (a * x) + (e * y) + (i * z) + (m * w);
+            vecYArray[ index ] = (b * x) + (f * y) + (j * z) + (n * w);
+            vecZArray[ index ] = (c * x) + (g * y) + (k * z) + (o * w);
+            vecWArray[ index ] = (d * x) + (h * y) + (l * z) + (p * w);
+
+            index++;
+        }
+    }
+
+    const multiply = function (A, B) {
+        var R = new Array(16);
+
+        R[0]  = (A[0] * B[ 0])    +    (A[4] * B[ 1])   +    (A[8 ] * B[ 2]) + (A[12] * B[ 3]);
+        R[1]  = (A[1] * B[ 0])    +    (A[5] * B[ 1])   +    (A[ 9] * B[ 2]) + (A[13] * B[ 3]);
+        R[2]  = (A[2] * B[ 0])    +    (A[6] * B[ 1])   +    (A[10] * B[ 2]) + (A[14] * B[ 3]);
+        R[3]  = (A[3] * B[ 0])    +    (A[7] * B[ 1])   +    (A[11] * B[ 2]) + (A[15] * B[ 3]);
+
+        R[4]  = (A[0] * B[ 4])    +    (A[4] * B[ 5])   +    (A[ 8] * B[ 6]) + (A[12] * B[ 7]);
+        R[5]  = (A[1] * B[ 4])    +    (A[5] * B[ 5])   +    (A[ 9] * B[ 6]) + (A[13] * B[ 7]);
+        R[6]  = (A[2] * B[ 4])    +    (A[6] * B[ 5])   +    (A[10] * B[ 6]) + (A[14] * B[ 7]);
+        R[7]  = (A[3] * B[ 4])    +    (A[7] * B[ 5])   +    (A[11] * B[ 6]) + (A[15] * B[ 7]);
+
+        R[8]  = (A[0] * B[ 8])    +    (A[4] * B[ 9])   +    (A[ 8] * B[10]) + (A[12] * B[11]);
+        R[9]  = (A[1] * B[ 8])    +    (A[5] * B[ 9])   +    (A[ 9] * B[10]) + (A[13] * B[11]);
+        R[10] = (A[2] * B[ 8])    +    (A[6] * B[ 9])   +    (A[10] * B[10]) + (A[14] * B[11]);
+        R[11] = (A[3] * B[ 8])    +    (A[7] * B[ 9])   +    (A[11] * B[10]) + (A[15] * B[11]);
+
+        R[12] = (A[0] * B[12])    +    (A[4] * B[13])   +    (A[ 8] * B[14]) + (A[12] * B[15]);
+        R[13] = (A[1] * B[12])    +    (A[5] * B[13])   +    (A[ 9] * B[14]) + (A[13] * B[15]);
+        R[14] = (A[2] * B[12])    +    (A[6] * B[13])   +    (A[10] * B[14]) + (A[14] * B[15]);
+        R[15] = (A[3] * B[12])    +    (A[7] * B[13])   +    (A[11] * B[14]) + (A[15] * B[15]);
+
+        return R;
+    };
+
+    const rot_matrix_x = ( matrix, radians ) => {
+        var sin = Math.sin( radians );
+        var cos = Math.cos( radians );
+
+        if (radians < 0) { sin *= -1; }
+       
+        var M = new Array(16);
+
+        M[0] = 1;  M[4] = 0;    M[ 8] = 0;    M[12] = 0;
+        M[1] = 0;  M[5] = cos;  M[ 9] = -sin; M[13] = 0;
+        M[2] = 0;  M[6] = sin;  M[10] = cos;  M[14] = 0;
+        M[3] = 0;  M[7] = 0;    M[11] = 0;    M[15] = 1;        
+
+        return multiply( matrix, M );
+    }
+
+    const rot_matrix_y = ( matrix, radians ) => {
+        var sin = Math.sin( radians );
+        var cos = Math.cos( radians );
+
+        if (radians < 0) { sin *= -1; }
+       
+        var M = new Array(16);
+
+        M[0] = cos;  M[4] = 0;  M[8]  = sin;    M[12] = 0;
+        M[1] = 0;    M[5] = 1;  M[9]  = 0;      M[13] = 0;
+        M[2] = -sin; M[6] = 0;  M[10] = cos;    M[14] = 0;
+        M[3] = 0;    M[7] = 0;  M[11] = 0;      M[15] = 1;  
+
+        return multiply( matrix, M );
+    }
+
+    const rot_matrix_z = ( matrix, radians ) => {
+        var sin = Math.sin( radians );
+        var cos = Math.cos( radians );
+
+        if (radians < 0) { sin *= -1; }
+       
+        var M = new Array(16);
+
+        M[0] = cos;  M[4] = -sin;  M[8]  = 0;  M[12] = 0;
+        M[1] = sin;  M[5] = cos;   M[9]  = 0;  M[13] = 0;
+        M[2] = 0;    M[6] = 0;     M[10] = 1;  M[14] = 0;
+        M[3] = 0;    M[7] = 0;     M[11] = 0;  M[15] = 1;
+
+        return multiply( matrix, M );
+    }
+
+    const scale_matrix = ( matrix, sx, sy, sz ) => {
+        var M = new Array(16);
+
+        M[0] = sx || 1; M[4] = 0;        M[ 8] = 0;        M[12] = 0;
+        M[1] = 0;       M[5] = sy || sx; M[ 9] = 0;        M[13] = 0;
+        M[2] = 0;       M[6] = 0;        M[10] = sz || sx; M[14] = 0;
+        M[3] = 0;       M[7] = 0;        M[11] = 0;        M[15] = 1;
+        
+        return multiply( matrix, M );
+    }
+
+    const translate_matrix = ( matrix, dx, dy, dz ) => {
+        var M = new Array(16);
+        
+        M[0] = 1;  M[4] = 0;  M[ 8] = 0;  M[12] = dx || 0;
+        M[1] = 0;  M[5] = 1;  M[ 9] = 0;  M[13] = dy || 0;
+        M[2] = 0;  M[6] = 0;  M[10] = 1;  M[14] = dz || 0;
+        M[3] = 0;  M[7] = 0;  M[11] = 0;  M[15] = 1;
+
+        return multiply( matrix, M );
+    }
+    
+
+    let scene = {
+        angle_x : 0,
+        delta_x : 0,
+        delta_v : 0,
+        delta_h : 0,
+        delta_y : 0,
+        angle_y : 0,
+        delta_z : 0
+    }
+
+    projection = translate_matrix( 
+        projection, 0, 0, -3 );
+
+
+    function render () {
+
+        let viewmat = structuredClone(projection);
+        var vArrays = structuredClone(verticeArrays);
+
+        let scale_z = 1 + (scene.delta_z / innerHeight);
+        if (scale_z < 0) { scale_z /= -1;}
+
+        let pan_x = scene.delta_h / -innerWidth; 
+        let pan_y = scene.delta_v / innerHeight; 
+
+        let angle_x = (((scene.delta_y % innerHeight) / innerHeight) - 0.5) * (Math.PI/1) + Math.PI/-2;
+        let angle_y = (((scene.delta_x % innerWidth) / innerWidth) - 0.5) * (Math.PI/1) + Math.PI/2;
+
+        viewmat = translate_matrix( viewmat, pan_x, pan_y )
+        viewmat = rot_matrix_x( viewmat, angle_x )
+        viewmat = rot_matrix_y( viewmat, angle_y )
+
+        viewmat = scale_matrix( viewmat, scale_z )
+        // viewmat = rot_matrix_z( viewmat, Math.PI / 30 )
+
+    
+        mul_matrix_vecs( viewmat, vArrays )
+
+        const renderPassDescriptor = {
+            colorAttachments: [{
+                clearValue  : clearColor,
+                loadOp      : 'clear',
+                storeOp     : 'store',
+                view        : context.getCurrentTexture().createView()
+            }]
+        };
+
+        const commandEncoder = device.createCommandEncoder();
+        const passEncoder    = commandEncoder.beginRenderPass(renderPassDescriptor);
+
+        verticeArrayBuffers.forEach((buffer, i) => 
+            passEncoder.setVertexBuffer(i, buffer)
+        );
+
+        verticeArrayBuffers.forEach((buffer, i) => 
+            device.queue.writeBuffer(buffer, 0, vArrays[i], 0, vArrays[i].length)
+        )
+            
+        passEncoder.setPipeline(renderPipeline);
+        passEncoder.draw( vertices.length/8 );
+        passEncoder.end();
+        
+        device.queue.submit([commandEncoder.finish()]);
+    }
+
+    render()
+
+    let start_of_mouse_drag;
+
+    onpointerdown = event => {
+        start_of_mouse_drag = event;
+        event.preventDefault();
+    }
+
+    onpointerup = event => {
+        start_of_mouse_drag = null;
+        event.preventDefault();        
+    }
+
+    onwheel = event => { 
+        scene.delta_h += event.deltaX;
+
+        if (Number.isInteger(event.deltaY)) {
+            scene.delta_v += event.deltaY;
+        }
+        else {
+            scene.delta_z += event.deltaY;
+        }
+
+        render(); 
+    }
+
+    onpointermove = event => {
+        var delta_x, delta_y, x_limit, y_limit, new_x, new_y;
+
+
+        //console.log("drag event x,y = " + event.clientX + " " + event.clientY + "  " + event.which);
+        if (start_of_mouse_drag) {
+            delta_x = -(event.clientX - start_of_mouse_drag.clientX) * 0.1745;
+            delta_y =  (event.clientY - start_of_mouse_drag.clientY) * 0.1745;
+
+            scene.delta_x += event.movementX;
+            scene.delta_y += event.movementY;
+
+            scene.angle_x += delta_x;
+            scene.angle_y += delta_y;
+            
+            render();
+
+            start_of_mouse_drag = event;
+            event.preventDefault();
+        }
+    }
+
+
+    console.log({
+        adapter, device, canvas, context,
+        renderPipeline, buffer
+    })
+</script>
+</html>

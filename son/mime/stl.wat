@@ -29,6 +29,8 @@
         (local $attributeByteArray <Uint8Array>)
         (local $i i32)
 
+        return
+
         (local #length $ArrayBuffer:byteLength( this ))
         (local #offset malloc( local($length) ))
 
@@ -39,7 +41,7 @@
         
         (local #triangleCount (i32.load (i32.add local($offset) global($STL.OFFSET_TRIANGLE_COUNT))))
         (local #triangleOffset (i32.add local($offset) global($STL.OFFSET_TRIANGLE_DATA)))
-        (local #triangleCount (i32.const 100))
+        (local #triangleCount (i32.const 5))
 
         (if local($triangleCount)
             (then
