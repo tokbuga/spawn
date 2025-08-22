@@ -108,74 +108,79 @@
     );
 
     await new Promise(d => setTimeout(d, 100));
+    const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 };
 
-    const filename  = "1.3_OLED_IIC_128x64.STL" && "CaseV1.STL";
+    const filename  = "1.3_OLED_IIC_128x64.STL" || "CaseV1.STL";
     const adapter   = await navigator.gpu.requestAdapter();
     const device    = await adapter.requestDevice();
     const canvas    = document.querySelector("canvas");
     const context   = canvas.getContext("webgpu");
-    const buffer    = await new Promise(done => indexedDB.open("tmp").onsuccess = e => e.target.result.transaction("uploads").objectStore("uploads").get(filename).onsuccess = s => s.target.result.arrayBuffer().then(b => b.slice(80)).then(done));
-    const view      = new DataView(buffer);
-    const tcount    = view.getUint32(0, true);
-    const vertices  = new Float32Array( tcount * 3 * 8 );
-    const vertsView = new DataView( vertices.buffer );
-    const readLen   = view.byteLength;
 
-    let t = 0;
-    let read_offset = 0;
-    let write_offset = -4;
-    const R=1, G=1, B=0;
-    const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 };
+    const stl       = await new Promise(done => indexedDB.open("tmp").onsuccess = e => e.target.result.transaction("uploads").objectStore("uploads").get(filename).onsuccess = s => s.target.result.arrayBuffer().then(done));
 
-    while (read_offset < readLen) {
-        //skip normals
-        read_offset += 12;
+    const stlToXYZWRGBA = (buffer, OxRGBA) => {
+        const [R,G,B,A = 1] = OxRGBA.toString(16).padStart(6,0).match(/\w{2}/g).map(d => parseInt(d,16)/0xff);
 
-        //vertices1 - X Y Z
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        let triangleCount = new Uint32Array(buffer, 80, 1).at(0);
 
-        //vertices1 - W R G B A
-        vertsView.setFloat32( write_offset += 4, 1, true ); 
-        vertsView.setFloat32( write_offset += 4, R, true ); 
-        vertsView.setFloat32( write_offset += 4, G, true ); 
-        vertsView.setFloat32( write_offset += 4, B, true ); 
-        vertsView.setFloat32( write_offset += 4, 1, true ); 
+        const srcView = new DataView(buffer);
+        const dstView = new DataView(new ArrayBuffer(triangleCount * 3 * 8 * 4))
 
-        //vertices2 - X Y Z
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+        let read_offset = 80;
+        let write_offset = 0 - 4;
+        let break_offset = srcView.byteLength - (50 + 84);
 
-        //vertices2 - W R G B A
-        vertsView.setFloat32( write_offset += 4, 1, true ); 
-        vertsView.setFloat32( write_offset += 4, R, true ); 
-        vertsView.setFloat32( write_offset += 4, G, true ); 
-        vertsView.setFloat32( write_offset += 4, B, true ); 
-        vertsView.setFloat32( write_offset += 4, 1, true ); 
+        while (1) {
+            //skip normals
+            read_offset += 12;
 
+            //vertices1 - X Y Z
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
 
-        //vertices3 - X Y Z
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
-        vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+            //vertices1 - W R G B A
+            dstView.setFloat32( write_offset += 4, 1, true ); 
+            dstView.setFloat32( write_offset += 4, R, true ); 
+            dstView.setFloat32( write_offset += 4, G, true ); 
+            dstView.setFloat32( write_offset += 4, B, true ); 
+            dstView.setFloat32( write_offset += 4, A, true ); 
 
-        //vertices3 - W R G B A
-        vertsView.setFloat32( write_offset += 4, 1, true ); 
-        vertsView.setFloat32( write_offset += 4, R, true ); 
-        vertsView.setFloat32( write_offset += 4, G, true ); 
-        vertsView.setFloat32( write_offset += 4, B, true ); 
-        vertsView.setFloat32( write_offset += 4, 1, true ); 
+            //vertices2 - X Y Z
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
 
-        //attribs byte length
-        read_offset += 2;
+            //vertices2 - W R G B A
+            dstView.setFloat32( write_offset += 4, 1, true ); 
+            dstView.setFloat32( write_offset += 4, R, true ); 
+            dstView.setFloat32( write_offset += 4, G, true ); 
+            dstView.setFloat32( write_offset += 4, B, true ); 
+            dstView.setFloat32( write_offset += 4, A, true ); 
 
-        if ((read_offset + 50) >= readLen) {
-            break
+            //vertices3 - X Y Z
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
+            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
+
+            //vertices3 - W R G B A
+            dstView.setFloat32( write_offset += 4, 1, true ); 
+            dstView.setFloat32( write_offset += 4, R, true ); 
+            dstView.setFloat32( write_offset += 4, G, true ); 
+            dstView.setFloat32( write_offset += 4, B, true ); 
+            dstView.setFloat32( write_offset += 4, A, true ); 
+
+            //attribs byte length
+            read_offset += 2;
+
+            if (read_offset >= break_offset) {
+                break
+            }
+
         }
-    }
 
+        return dstView.buffer;
+    }
 
     context.configure({
         device,
@@ -222,58 +227,125 @@
 
     const renderPipeline = device.createRenderPipeline(pipelineDescriptor);
 
-    const attributeBufferDescriptors = "X Y Z W R G B A".split(" ").map(label =>
-        Object({ 
-            label   : label, 
-            size    : vertices.byteLength/8,
-            usage   : GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        }) 
-    );
+    const vecNx1_to_vec1xN = (tarray, N = 8) => 
+        new Array(N).fill(0).map((v, i) => tarray.filter((v, j) => (j % N) === i))
+    ;
 
-    const verticeArrays = [
-        new Float32Array( vertices.length/8 ),
-        new Float32Array( vertices.length/8 ),
-        new Float32Array( vertices.length/8 ),
-        new Float32Array( vertices.length/8 ),
-        new Float32Array( vertices.length/8 ),
-        new Float32Array( vertices.length/8 ),
-        new Float32Array( vertices.length/8 ),
-        new Float32Array( vertices.length/8 ),
-    ];
+    const vecMax = arr => {
+        let len = arr.length, 
+            max = -Infinity;
 
-    let i = 0;
-    while (i < vertices.length) {
-        const j = i%8, k = Math.floor(i/8);
-        verticeArrays[j][k] = vertices[i];
-        i++;
+        while (len--) {
+            if (arr[len] > max) {
+                max = arr[len];
+            }
+        }
+
+        return max;
+    }
+
+    const vecMin = arr => {
+        let len = arr.length, 
+            max = +Infinity;
+
+        while (len--) {
+            if (arr[len] < max) {
+                max = arr[len];
+            }
+        }
+
+        return max;
     }
 
 
-    const maxX = Math.max.apply( null, verticeArrays[0] );
-    const maxY = Math.max.apply( null, verticeArrays[1] );
-    const maxZ = Math.max.apply( null, verticeArrays[2] );
+    const vecAvg = arr => {
+        let len = arr.length, 
+            avg = 0;
 
-    const minX = Math.min.apply( null, verticeArrays[0] );
-    const minY = Math.min.apply( null, verticeArrays[1] );
-    const minZ = Math.min.apply( null, verticeArrays[2] );
+        while (len--) {
+            avg += arr[len];
+        }
 
-    const fwhX = (maxX - minX) / 2;
-    const fwhY = (maxY - minY) / 2;
-    const fwhZ = (maxZ - minZ) / 2;
+        return avg / arr.length;
+    }
 
-    const midX = (0 - maxX) + fwhX; 
-    const midY = (0 - maxY) + fwhY; 
-    const midZ = (0 - maxZ) + fwhZ; 
+    const vecMid = arr => {
+        let max = vecMax(arr),
+            min = vecMin(arr);
 
-    verticeArrays[0].forEach( (v,i) => verticeArrays[0][i] = (v + midX)/maxX )
-    verticeArrays[1].forEach( (v,i) => verticeArrays[1][i] = (v + midY)/maxY )
-    verticeArrays[2].forEach( (v,i) => verticeArrays[2][i] = (v + midZ)/maxZ )
+        return min + (max-min)/2;
+    }
 
-    const verticeArrayBuffers = verticeArrays.map((varray, i) => 
-        device.createBuffer(attributeBufferDescriptors[i])
+    const vecPad = arr => {
+        let max = vecMax(arr);
+        let min = vecMin(arr);
+
+        return (max + min) / -2;
+    };
+
+    const vecAbsMax = arr => Math.max( 
+        Math.abs( vecMax(arr) ), 
+        Math.abs( vecMin(arr) ) 
     );
 
-    const mul_matrix_vecs = ( matrix, vecArrays ) => {
+    const vecNormalize = (arr, k = vecAbsMax(arr)) => 
+        arr.map(v => v/k)
+    ;
+
+    const varraysAbsMax = (varrays) => 
+        vecMax(varrays
+            .filter((arr,i) => i < 2)
+            .map(arr => vecAbsMax(arr))
+        )  
+    ;
+
+    const varraysNormalize = (varrays, k) => {
+        k ||= varraysAbsMax(varrays);
+
+        return varrays.map((arr, i) => {
+            if (i > 2) {
+                return arr
+            }
+
+            return vecNormalize(arr, k);
+        })
+    };
+
+    const varraysOriginToCenter = (varrays, pad) => {
+        return varrays.map((arr, i) => {
+            if (i < 2) {
+                pad ||= vecPad(arr);
+                return arr.map(v => v + pad);
+            }
+            
+            return arr
+        })
+    };
+
+    const varraysBufferDescriptor = (varray, i, order = "XYZWRGBA") =>
+        Object({ 
+            label : order.charAt(i), size : varray.byteLength,
+            usage : GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+    ;
+
+
+    const varrays = 
+            varraysNormalize(
+                vecNx1_to_vec1xN(
+                    new Float32Array(
+                        stlToXYZWRGBA(stl, 0xcd3366f3)
+                    )
+                ),
+                300
+            )
+    ;
+
+    const vbuffers = varrays.map((varray, i) => 
+        device.createBuffer(varraysBufferDescriptor(varray, i))
+    );
+
+    const mul_matrix_vecs   = ( matrix, vecArrays ) => {
         
         const len = vecArrays[0].length;
         const [ vecXArray, vecYArray, vecZArray, vecWArray ] = vecArrays;
@@ -299,7 +371,7 @@
         }
     }
 
-    const multiply = function (A, B) {
+    const multiply          = function (A, B) {
         var R = new Array(16);
 
         R[0]  = (A[0] * B[ 0])    +    (A[4] * B[ 1])   +    (A[8 ] * B[ 2]) + (A[12] * B[ 3]);
@@ -325,7 +397,7 @@
         return R;
     };
 
-    const rot_matrix_x = ( matrix, radians ) => {
+    const rot_matrix_x      = ( matrix, radians ) => {
         var sin = Math.sin( radians );
         var cos = Math.cos( radians );
 
@@ -341,7 +413,7 @@
         return multiply( matrix, M );
     }
 
-    const rot_matrix_y = ( matrix, radians ) => {
+    const rot_matrix_y      = ( matrix, radians ) => {
         var sin = Math.sin( radians );
         var cos = Math.cos( radians );
 
@@ -357,7 +429,7 @@
         return multiply( matrix, M );
     }
 
-    const rot_matrix_z = ( matrix, radians ) => {
+    const rot_matrix_z      = ( matrix, radians ) => {
         var sin = Math.sin( radians );
         var cos = Math.cos( radians );
 
@@ -373,7 +445,7 @@
         return multiply( matrix, M );
     }
 
-    const scale_matrix = ( matrix, sx, sy, sz ) => {
+    const scale_matrix      = ( matrix, sx, sy, sz ) => {
         var M = new Array(16);
 
         M[0] = sx || 1; M[4] = 0;        M[ 8] = 0;        M[12] = 0;
@@ -384,7 +456,7 @@
         return multiply( matrix, M );
     }
 
-    const translate_matrix = ( matrix, dx, dy, dz ) => {
+    const translate_matrix  = ( matrix, dx, dy, dz ) => {
         var M = new Array(16);
         
         M[0] = 1;  M[4] = 0;  M[ 8] = 0;  M[12] = dx || 0;
@@ -410,10 +482,12 @@
         projection, 0, 0, -3 );
 
 
+    console.log(...varrays)
+
     function render () {
 
         let viewmat = structuredClone(projection);
-        var vArrays = structuredClone(verticeArrays);
+        var vArrays = structuredClone(varrays);
 
         let scale_z = 1 + (scene.delta_z / (innerHeight/2));
         if (scale_z < 0) { scale_z /= -1;}
@@ -427,9 +501,7 @@
         viewmat = translate_matrix( viewmat, pan_x, pan_y )
         viewmat = rot_matrix_x( viewmat, angle_x )
         viewmat = rot_matrix_y( viewmat, angle_y )
-
         viewmat = scale_matrix( viewmat, scale_z )
-        // viewmat = rot_matrix_z( viewmat, Math.PI / 30 )
 
     
         mul_matrix_vecs( viewmat, vArrays )
@@ -446,16 +518,16 @@
         const commandEncoder = device.createCommandEncoder();
         const passEncoder    = commandEncoder.beginRenderPass(renderPassDescriptor);
 
-        verticeArrayBuffers.forEach((buffer, i) => 
+        vbuffers.forEach((buffer, i) => 
             passEncoder.setVertexBuffer(i, buffer)
         );
 
-        verticeArrayBuffers.forEach((buffer, i) => 
+        vbuffers.forEach((buffer, i) => 
             device.queue.writeBuffer(buffer, 0, vArrays[i], 0, vArrays[i].length)
         )
             
         passEncoder.setPipeline(renderPipeline);
-        passEncoder.draw( vertices.length/8 );
+        passEncoder.draw(vArrays[0].length/3);
         passEncoder.end();
         
         device.queue.submit([commandEncoder.finish()]);
@@ -513,9 +585,5 @@
     }
 
 
-    console.log({
-        adapter, device, canvas, context,
-        renderPipeline, buffer
-    })
 </script>
 </html>
