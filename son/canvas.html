@@ -4,7 +4,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes" >
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-<body onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)" style="touch-action: manipulation; overscroll-behavior: none; pointer-events: none;"></body>
+<!-- onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)" -->
+<body style="touch-action: manipulation; overscroll-behavior: none; pointer-events: none; margin: 0; width: 100vw; height: 100vh;">
+    <canvas width="1260" height="1990" style="width: 630px; height: 995px; position: fixed;"></canvas>
+</body>
 <script type="x-shader/x-fragment" id="shaders">
     struct VertexOut {
         @builtin( position ) position : vec4f,
@@ -45,6 +48,57 @@
     }
 </script>
 <script type="module">
+    const CHUNK_TYPE_JSON                                      = 0x4E4F534A;
+    const CHUNK_TYPE_BIN                                       = 0x004E4942;
+    const POINT_CLOUD                                          = 0;
+    const TRIANGULAR_MESH                                      = 1;
+    const MESH_SEQUENTIAL_ENCODING                             = 0;
+    const MESH_EDGEBREAKER_ENCODING                            = 1;
+    const METADATA_FLAG_MASK                                   = 32768;
+    const SEQUENTIAL_ATTRIBUTE_ENCODER_GENERIC                 = 0;
+    const SEQUENTIAL_ATTRIBUTE_ENCODER_INTEGER                 = 1;
+    const SEQUENTIAL_ATTRIBUTE_ENCODER_QUANTIZATION            = 2;
+    const SEQUENTIAL_ATTRIBUTE_ENCODER_NORMALS                 = 3;
+    const SEQUENTIAL_COMPRESSED_INDICES                        = 0;
+    const SEQUENTIAL_UNCOMPRESSED_INDICES                      = 1;
+    const PREDICTION_NONE                                      = -2;
+    const PREDICTION_DIFFERENCE                                = 0;
+    const MESH_PREDICTION_PARALLELOGRAM                        = 1;
+    const MESH_PREDICTION_CONSTRAINED_MULTI_PARALLELOGRAM      = 4;
+    const MESH_PREDICTION_TEX_COORDS_PORTABLE                  = 5;
+    const MESH_PREDICTION_GEOMETRIC_NORMAL                     = 6;
+    const PREDICTION_TRANSFORM_WRAP                            = 1;
+    const PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED = 3;
+    const MESH_TRAVERSAL_DEPTH_FIRST                           = 0;
+    const MESH_TRAVERSAL_PREDICTION_DEGREE                     = 1;
+    const MESH_VERTEX_ATTRIBUTE                                = 0;
+    const MESH_CORNER_ATTRIBUTE                                = 1;
+    const STANDARD_EDGEBREAKER                                 = 0;
+    const VALENCE_EDGEBREAKER                                  = 2;
+    const kInvalidCornerIndex                                  = -1;
+    const LEFT_FACE_EDGE                                       = 0;
+    const RIGHT_FACE_EDGE                                      = 1;
+    const kTexCoordsNumComponents                              = 2;
+    const kMaxNumParallelograms                                = 4;
+    const kMaxPriority                                         = 3;
+    const TOPOLOGY_C                                           = 0;
+    const TOPOLOGY_S                                           = 1;
+    const TOPOLOGY_L                                           = 3;
+    const TOPOLOGY_R                                           = 5;
+    const TOPOLOGY_E                                           = 7;
+    const MIN_VALENCE                                          = 2;
+    const MAX_VALENCE                                          = 7;
+    const NUM_UNIQUE_VALENCES                                  = 6;
+    const rabs_ans_p8_precision                                = 256;
+    const rabs_ans_p10_precision                               = 1024;
+    const rabs_l_base                                          = 4096;
+    const IO_BASE                                              = 256;
+    const L_RANS_BASE                                          = 4096;
+    const TAGGED_RANS_BASE                                     = 16384;
+    const TAGGED_RANS_PRECISION                                = 4096;
+    const TAGGED_SYMBOLS                                       = 0;
+    const RAW_SYMBOLS                                          = 1;
+
     function toRadians (angleInDegrees) {
         return angleInDegrees * 0.017453292519943295;  // Math.PI / 180
     };
@@ -108,482 +162,898 @@
     );
 
     await new Promise(d => setTimeout(d, 100));
-    const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 };
 
-    const filename  = "1.3_OLED_IIC_128x64.STL" || "CaseV1.STL";
+    const filename  = "npc_d.glb";// || "1.3_OLED_IIC_128x64.STL" || "CaseV1.STL";
     const adapter   = await navigator.gpu.requestAdapter();
     const device    = await adapter.requestDevice();
     const canvas    = document.querySelector("canvas");
     const context   = canvas.getContext("webgpu");
+    const buffer    = await new Promise(done => indexedDB.open("tmp").onsuccess = e => e.target.result.transaction("uploads").objectStore("uploads").get(filename).onsuccess = s => s.target.result.arrayBuffer().then(done));
 
-    const stl       = await new Promise(done => indexedDB.open("tmp").onsuccess = e => e.target.result.transaction("uploads").objectStore("uploads").get(filename).onsuccess = s => s.target.result.arrayBuffer().then(done));
-
-    const stlToXYZWRGBA = (buffer, OxRGBA) => {
-        const [R,G,B,A = 1] = OxRGBA.toString(16).padStart(6,0).match(/\w{2}/g).map(d => parseInt(d,16)/0xff);
-
-        let triangleCount = new Uint32Array(buffer, 80, 1).at(0);
-
-        const srcView = new DataView(buffer);
-        const dstView = new DataView(new ArrayBuffer(triangleCount * 3 * 8 * 4))
-
-        let read_offset = 80;
-        let write_offset = 0 - 4;
-        let break_offset = srcView.byteLength - (50 + 84);
-
-        while (1) {
+    function readStl() {
+        const view      = new DataView(buffer);
+        const tcount    = view.getUint32(0, true);
+        const vertices  = new Float32Array( tcount * 3 * 8 );
+        const vertsView = new DataView( vertices.buffer );
+        const readLen   = view.byteLength;
+    
+        const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 };
+    
+        
+        const R=1, G=1, B=1;
+        let read_offset = 0;
+        let write_offset = -4;
+    
+        while (read_offset < readLen) {
             //skip normals
             read_offset += 12;
-
+    
             //vertices1 - X Y Z
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+    
             //vertices1 - W R G B A
-            dstView.setFloat32( write_offset += 4, 1, true ); 
-            dstView.setFloat32( write_offset += 4, R, true ); 
-            dstView.setFloat32( write_offset += 4, G, true ); 
-            dstView.setFloat32( write_offset += 4, B, true ); 
-            dstView.setFloat32( write_offset += 4, A, true ); 
-
+            vertsView.setFloat32( write_offset += 4, 1, true ); 
+            vertsView.setFloat32( write_offset += 4, R, true ); 
+            vertsView.setFloat32( write_offset += 4, G, true ); 
+            vertsView.setFloat32( write_offset += 4, B, true ); 
+            vertsView.setFloat32( write_offset += 4, 1, true ); 
+    
             //vertices2 - X Y Z
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+    
             //vertices2 - W R G B A
-            dstView.setFloat32( write_offset += 4, 1, true ); 
-            dstView.setFloat32( write_offset += 4, R, true ); 
-            dstView.setFloat32( write_offset += 4, G, true ); 
-            dstView.setFloat32( write_offset += 4, B, true ); 
-            dstView.setFloat32( write_offset += 4, A, true ); 
-
+            vertsView.setFloat32( write_offset += 4, 1, true ); 
+            vertsView.setFloat32( write_offset += 4, R, true ); 
+            vertsView.setFloat32( write_offset += 4, G, true ); 
+            vertsView.setFloat32( write_offset += 4, B, true ); 
+            vertsView.setFloat32( write_offset += 4, 1, true ); 
+    
+    
             //vertices3 - X Y Z
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-            dstView.setFloat32( write_offset += 4, srcView.getFloat32(read_offset += 4) ); 
-
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+            vertsView.setFloat32( write_offset += 4, view.getFloat32(read_offset += 4) ); 
+    
             //vertices3 - W R G B A
-            dstView.setFloat32( write_offset += 4, 1, true ); 
-            dstView.setFloat32( write_offset += 4, R, true ); 
-            dstView.setFloat32( write_offset += 4, G, true ); 
-            dstView.setFloat32( write_offset += 4, B, true ); 
-            dstView.setFloat32( write_offset += 4, A, true ); 
-
+            vertsView.setFloat32( write_offset += 4, 1, true ); 
+            vertsView.setFloat32( write_offset += 4, R, true ); 
+            vertsView.setFloat32( write_offset += 4, G, true ); 
+            vertsView.setFloat32( write_offset += 4, B, true ); 
+            vertsView.setFloat32( write_offset += 4, 1, true ); 
+    
             //attribs byte length
             read_offset += 2;
-
-            if (read_offset >= break_offset) {
+    
+            if ((read_offset + 50) >= readLen) {
                 break
             }
-
         }
-
-        return dstView.buffer;
-    }
-
-    context.configure({
-        device,
-        format: navigator.gpu.getPreferredCanvasFormat(),
-        alphaMode: "premultiplied",
-    });
-
-    const shaderModule = device.createShaderModule({
-        code: shaders.text,
-    });
-
-    const vertexBuffers = [
-        { attributes: [ { shaderLocation : 0, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-        { attributes: [ { shaderLocation : 1, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-        { attributes: [ { shaderLocation : 2, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-        { attributes: [ { shaderLocation : 3, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-        { attributes: [ { shaderLocation : 4, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-        { attributes: [ { shaderLocation : 5, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-        { attributes: [ { shaderLocation : 6, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-        { attributes: [ { shaderLocation : 7, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
-    ];
-
-    const pipelineDescriptor = {
-        vertex: {
-            module      : shaderModule,
-            entryPoint  : "vertex_main",
-            buffers     : vertexBuffers,
-        },
-        fragment        : {
-            module      : shaderModule,
-            entryPoint  : "fragment_main",
-            targets     : [
-                {
-                    format: navigator.gpu.getPreferredCanvasFormat(),
-                },
-            ],
-        },
-        primitive       : {
-            topology    : "triangle-list",
-        },
-        layout          : "auto",
-        label           : "triangle-list-toplogy"
-    };
-
-    const renderPipeline = device.createRenderPipeline(pipelineDescriptor);
-
-    const vecNx1_to_vec1xN = (tarray, N = 8) => 
-        new Array(N).fill(0).map((v, i) => tarray.filter((v, j) => (j % N) === i))
-    ;
-
-    const vecMax = arr => {
-        let len = arr.length, 
-            max = -Infinity;
-
-        while (len--) {
-            if (arr[len] > max) {
-                max = arr[len];
-            }
-        }
-
-        return max;
-    }
-
-    const vecMin = arr => {
-        let len = arr.length, 
-            max = +Infinity;
-
-        while (len--) {
-            if (arr[len] < max) {
-                max = arr[len];
-            }
-        }
-
-        return max;
-    }
-
-
-    const vecAvg = arr => {
-        let len = arr.length, 
-            avg = 0;
-
-        while (len--) {
-            avg += arr[len];
-        }
-
-        return avg / arr.length;
-    }
-
-    const vecMid = arr => {
-        let max = vecMax(arr),
-            min = vecMin(arr);
-
-        return min + (max-min)/2;
-    }
-
-    const vecPad = arr => {
-        let max = vecMax(arr);
-        let min = vecMin(arr);
-
-        return (max + min) / -2;
-    };
-
-    const vecAbsMax = arr => Math.max( 
-        Math.abs( vecMax(arr) ), 
-        Math.abs( vecMin(arr) ) 
-    );
-
-    const vecNormalize = (arr, k = vecAbsMax(arr)) => 
-        arr.map(v => v/k)
-    ;
-
-    const varraysAbsMax = (varrays) => 
-        vecMax(varrays
-            .filter((arr,i) => i < 2)
-            .map(arr => vecAbsMax(arr))
-        )  
-    ;
-
-    const varraysNormalize = (varrays, k) => {
-        k ||= varraysAbsMax(varrays);
-
-        return varrays.map((arr, i) => {
-            if (i > 2) {
-                return arr
-            }
-
-            return vecNormalize(arr, k);
-        })
-    };
-
-    const varraysOriginToCenter = (varrays, pad) => {
-        return varrays.map((arr, i) => {
-            if (i < 2) {
-                pad ||= vecPad(arr);
-                return arr.map(v => v + pad);
-            }
-            
-            return arr
-        })
-    };
-
-    const varraysBufferDescriptor = (varray, i, order = "XYZWRGBA") =>
-        Object({ 
-            label : order.charAt(i), size : varray.byteLength,
-            usage : GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        })
-    ;
-
-
-    const varrays = 
-            varraysNormalize(
-                vecNx1_to_vec1xN(
-                    new Float32Array(
-                        stlToXYZWRGBA(stl, 0xcd3366f3)
-                    )
-                ),
-                300
-            )
-    ;
-
-    const vbuffers = varrays.map((varray, i) => 
-        device.createBuffer(varraysBufferDescriptor(varray, i))
-    );
-
-    const mul_matrix_vecs   = ( matrix, vecArrays ) => {
-        
-        const len = vecArrays[0].length;
-        const [ vecXArray, vecYArray, vecZArray, vecWArray ] = vecArrays;
-        
-        const [ 
-            a, b, c, d, 
-            e, f, g, h, 
-            i, j, k, l, 
-            m, n, o, p 
-        ] = matrix;
-
-        let index = 0;
-        while (index < len) {
-
-            const [ x, y, z, w ] = [ vecXArray[index], vecYArray[index], vecZArray[index], vecWArray[index] ];
-
-            vecXArray[ index ] = (a * x) + (e * y) + (i * z) + (m * w);
-            vecYArray[ index ] = (b * x) + (f * y) + (j * z) + (n * w);
-            vecZArray[ index ] = (c * x) + (g * y) + (k * z) + (o * w);
-            vecWArray[ index ] = (d * x) + (h * y) + (l * z) + (p * w);
-
-            index++;
-        }
-    }
-
-    const multiply          = function (A, B) {
-        var R = new Array(16);
-
-        R[0]  = (A[0] * B[ 0])    +    (A[4] * B[ 1])   +    (A[8 ] * B[ 2]) + (A[12] * B[ 3]);
-        R[1]  = (A[1] * B[ 0])    +    (A[5] * B[ 1])   +    (A[ 9] * B[ 2]) + (A[13] * B[ 3]);
-        R[2]  = (A[2] * B[ 0])    +    (A[6] * B[ 1])   +    (A[10] * B[ 2]) + (A[14] * B[ 3]);
-        R[3]  = (A[3] * B[ 0])    +    (A[7] * B[ 1])   +    (A[11] * B[ 2]) + (A[15] * B[ 3]);
-
-        R[4]  = (A[0] * B[ 4])    +    (A[4] * B[ 5])   +    (A[ 8] * B[ 6]) + (A[12] * B[ 7]);
-        R[5]  = (A[1] * B[ 4])    +    (A[5] * B[ 5])   +    (A[ 9] * B[ 6]) + (A[13] * B[ 7]);
-        R[6]  = (A[2] * B[ 4])    +    (A[6] * B[ 5])   +    (A[10] * B[ 6]) + (A[14] * B[ 7]);
-        R[7]  = (A[3] * B[ 4])    +    (A[7] * B[ 5])   +    (A[11] * B[ 6]) + (A[15] * B[ 7]);
-
-        R[8]  = (A[0] * B[ 8])    +    (A[4] * B[ 9])   +    (A[ 8] * B[10]) + (A[12] * B[11]);
-        R[9]  = (A[1] * B[ 8])    +    (A[5] * B[ 9])   +    (A[ 9] * B[10]) + (A[13] * B[11]);
-        R[10] = (A[2] * B[ 8])    +    (A[6] * B[ 9])   +    (A[10] * B[10]) + (A[14] * B[11]);
-        R[11] = (A[3] * B[ 8])    +    (A[7] * B[ 9])   +    (A[11] * B[10]) + (A[15] * B[11]);
-
-        R[12] = (A[0] * B[12])    +    (A[4] * B[13])   +    (A[ 8] * B[14]) + (A[12] * B[15]);
-        R[13] = (A[1] * B[12])    +    (A[5] * B[13])   +    (A[ 9] * B[14]) + (A[13] * B[15]);
-        R[14] = (A[2] * B[12])    +    (A[6] * B[13])   +    (A[10] * B[14]) + (A[14] * B[15]);
-        R[15] = (A[3] * B[12])    +    (A[7] * B[13])   +    (A[11] * B[14]) + (A[15] * B[15]);
-
-        return R;
-    };
-
-    const rot_matrix_x      = ( matrix, radians ) => {
-        var sin = Math.sin( radians );
-        var cos = Math.cos( radians );
-
-        if (radians < 0) { sin *= -1; }
-       
-        var M = new Array(16);
-
-        M[0] = 1;  M[4] = 0;    M[ 8] = 0;    M[12] = 0;
-        M[1] = 0;  M[5] = cos;  M[ 9] = -sin; M[13] = 0;
-        M[2] = 0;  M[6] = sin;  M[10] = cos;  M[14] = 0;
-        M[3] = 0;  M[7] = 0;    M[11] = 0;    M[15] = 1;        
-
-        return multiply( matrix, M );
-    }
-
-    const rot_matrix_y      = ( matrix, radians ) => {
-        var sin = Math.sin( radians );
-        var cos = Math.cos( radians );
-
-        if (radians < 0) { sin *= -1; }
-       
-        var M = new Array(16);
-
-        M[0] = cos;  M[4] = 0;  M[8]  = sin;    M[12] = 0;
-        M[1] = 0;    M[5] = 1;  M[9]  = 0;      M[13] = 0;
-        M[2] = -sin; M[6] = 0;  M[10] = cos;    M[14] = 0;
-        M[3] = 0;    M[7] = 0;  M[11] = 0;      M[15] = 1;  
-
-        return multiply( matrix, M );
-    }
-
-    const rot_matrix_z      = ( matrix, radians ) => {
-        var sin = Math.sin( radians );
-        var cos = Math.cos( radians );
-
-        if (radians < 0) { sin *= -1; }
-       
-        var M = new Array(16);
-
-        M[0] = cos;  M[4] = -sin;  M[8]  = 0;  M[12] = 0;
-        M[1] = sin;  M[5] = cos;   M[9]  = 0;  M[13] = 0;
-        M[2] = 0;    M[6] = 0;     M[10] = 1;  M[14] = 0;
-        M[3] = 0;    M[7] = 0;     M[11] = 0;  M[15] = 1;
-
-        return multiply( matrix, M );
-    }
-
-    const scale_matrix      = ( matrix, sx, sy, sz ) => {
-        var M = new Array(16);
-
-        M[0] = sx || 1; M[4] = 0;        M[ 8] = 0;        M[12] = 0;
-        M[1] = 0;       M[5] = sy || sx; M[ 9] = 0;        M[13] = 0;
-        M[2] = 0;       M[6] = 0;        M[10] = sz || sx; M[14] = 0;
-        M[3] = 0;       M[7] = 0;        M[11] = 0;        M[15] = 1;
-        
-        return multiply( matrix, M );
-    }
-
-    const translate_matrix  = ( matrix, dx, dy, dz ) => {
-        var M = new Array(16);
-        
-        M[0] = 1;  M[4] = 0;  M[ 8] = 0;  M[12] = dx || 0;
-        M[1] = 0;  M[5] = 1;  M[ 9] = 0;  M[13] = dy || 0;
-        M[2] = 0;  M[6] = 0;  M[10] = 1;  M[14] = dz || 0;
-        M[3] = 0;  M[7] = 0;  M[11] = 0;  M[15] = 1;
-
-        return multiply( matrix, M );
-    }
     
-
-    let scene = {
-        angle_x : 0,
-        delta_x : 0,
-        delta_v : 0,
-        delta_h : 0,
-        delta_y : 0,
-        angle_y : 0,
-        delta_z : 0
-    }
-
-    projection = translate_matrix( 
-        projection, 0, 0, -3 );
-
-
-    console.log(...varrays)
-
-    function render () {
-
-        let viewmat = structuredClone(projection);
-        var vArrays = structuredClone(varrays);
-
-        let scale_z = 1 + (scene.delta_z / (innerHeight/2));
-        if (scale_z < 0) { scale_z /= -1;}
-
-        let pan_x = scene.delta_h / -(innerWidth/2); 
-        let pan_y = scene.delta_v /  (innerHeight/2); 
-
-        let angle_x = (((scene.delta_y % innerHeight) / innerHeight) - 0.5) * (Math.PI/1) + Math.PI/-2;
-        let angle_y = (((scene.delta_x % innerWidth) / innerWidth) - 0.5) * (Math.PI/1) + Math.PI/2;
-
-        viewmat = translate_matrix( viewmat, pan_x, pan_y )
-        viewmat = rot_matrix_x( viewmat, angle_x )
-        viewmat = rot_matrix_y( viewmat, angle_y )
-        viewmat = scale_matrix( viewmat, scale_z )
-
     
-        mul_matrix_vecs( viewmat, vArrays )
-
-        const renderPassDescriptor = {
-            colorAttachments: [{
-                clearValue  : clearColor,
-                loadOp      : 'clear',
-                storeOp     : 'store',
-                view        : context.getCurrentTexture().createView()
-            }]
+        context.configure({
+            device,
+            format: navigator.gpu.getPreferredCanvasFormat(),
+            alphaMode: "premultiplied",
+        });
+    
+        const shaderModule = device.createShaderModule({
+            code: shaders.text,
+        });
+    
+        const vertexBuffers = [
+            { attributes: [ { shaderLocation : 0, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+            { attributes: [ { shaderLocation : 1, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+            { attributes: [ { shaderLocation : 2, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+            { attributes: [ { shaderLocation : 3, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+            { attributes: [ { shaderLocation : 4, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+            { attributes: [ { shaderLocation : 5, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+            { attributes: [ { shaderLocation : 6, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+            { attributes: [ { shaderLocation : 7, format : "float32", offset : 0 } ], arrayStride : 4, stepMode : "vertex" },
+        ];
+    
+        const pipelineDescriptor = {
+            vertex: {
+                module      : shaderModule,
+                entryPoint  : "vertex_main",
+                buffers     : vertexBuffers,
+            },
+            fragment        : {
+                module      : shaderModule,
+                entryPoint  : "fragment_main",
+                targets     : [
+                    {
+                        format: navigator.gpu.getPreferredCanvasFormat(),
+                    },
+                ],
+            },
+            primitive       : {
+                topology    : "triangle-list",
+            },
+            layout          : "auto",
+            label           : "triangle-list-toplogy"
         };
-
-        const commandEncoder = device.createCommandEncoder();
-        const passEncoder    = commandEncoder.beginRenderPass(renderPassDescriptor);
-
-        vbuffers.forEach((buffer, i) => 
-            passEncoder.setVertexBuffer(i, buffer)
+    
+        const renderPipeline = device.createRenderPipeline(pipelineDescriptor);
+    
+        const vecNx1_to_vec1xN = (tarray, N = 8) => 
+            new Array(N).fill(tarray.constructor).map(Class => new Class(tarray.length/N)).map(
+                (varray, i) => varray.set(tarray.filter((value, j) => j % N === i)) || varray
+            )
+        ;
+    
+        const vecMax = arr => {
+            let len = arr.length, 
+                max = -Infinity;
+    
+            while (len--) {
+                if (arr[len] > max) {
+                    max = arr[len];
+                }
+            }
+    
+            return max;
+        }
+    
+        const vecMin = arr => {
+            let len = arr.length, 
+                max = +Infinity;
+    
+            while (len--) {
+                if (arr[len] < max) {
+                    max = arr[len];
+                }
+            }
+    
+            return max;
+        }
+    
+    
+        const vecAvg = arr => {
+            let len = arr.length, 
+                avg = 0;
+    
+            while (len--) {
+                avg += arr[len];
+            }
+    
+            return avg / arr.length;
+        }
+    
+        const vecMid = arr => {
+            let max = vecMax(arr),
+                min = vecMin(arr);
+    
+            return min + (max-min)/2;
+        }
+    
+        const vecPad = arr => {
+            let max = vecMax(arr);
+            let min = vecMin(arr);
+    
+            return (max + min) / -2;
+        };
+    
+        const vecAbsMax = arr => Math.max( 
+            Math.abs( vecMax(arr) ), 
+            Math.abs( vecMin(arr) ) 
         );
-
-        vbuffers.forEach((buffer, i) => 
-            device.queue.writeBuffer(buffer, 0, vArrays[i], 0, vArrays[i].length)
-        )
+    
+        const vecNormalize = (arr, k = vecAbsMax(arr)) => 
+            arr.map(v => v/k)
+        ;
+    
+        const varraysAbsMax = (varrays, l = 2) => 
+            vecMax(varrays.filter((arr,i) => l>i).map(vecAbsMax.bind(null)))  
+        ;
+    
+        const varraysNormalize = (varrays, k, l = 2) =>
+            (k = k||varraysAbsMax(varrays, l)) && varrays.map(
+                (arr, i) => ((i>l) && arr || vecNormalize(arr, k))
+            )
+        ;
+    
+        const varraysOriginToCenter = (varrays, k, l = 2, pad) =>
+            (k = k||varraysAbsMax(varrays, l)) && varrays.map(
+                (arr, i) => ((i>l) && arr || ((pad = vecPad(arr)) && arr.map(v => v + pad) || arr))
+            )
+        ;
+    
+        const varraysBufferDescriptor = (varray, i, order = "XYZWRGBA") =>
+            Object({ 
+                label : order.charAt(i), size : varray.byteLength,
+                usage : GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+            })
+        ;
+    
+    
+        const varrays = varraysOriginToCenter(varraysNormalize(vecNx1_to_vec1xN( vertices )));
+    
+        const vbuffers = varrays.map((varray, i) => 
+            device.createBuffer(varraysBufferDescriptor(varray, i))
+        );
+    
+        const mul_matrix_vecs   = ( matrix, vecArrays ) => {
             
-        passEncoder.setPipeline(renderPipeline);
-        passEncoder.draw(vArrays[0].length/3);
-        passEncoder.end();
+            const len = vecArrays[0].length;
+            const [ vecXArray, vecYArray, vecZArray, vecWArray ] = vecArrays;
+            
+            const [ 
+                a, b, c, d, 
+                e, f, g, h, 
+                i, j, k, l, 
+                m, n, o, p 
+            ] = matrix;
+    
+            let index = 0;
+            while (index < len) {
+    
+                const [ x, y, z, w ] = [ vecXArray[index], vecYArray[index], vecZArray[index], vecWArray[index] ];
+    
+                vecXArray[ index ] = (a * x) + (e * y) + (i * z) + (m * w);
+                vecYArray[ index ] = (b * x) + (f * y) + (j * z) + (n * w);
+                vecZArray[ index ] = (c * x) + (g * y) + (k * z) + (o * w);
+                vecWArray[ index ] = (d * x) + (h * y) + (l * z) + (p * w);
+    
+                index++;
+            }
+        }
+    
+        const multiply          = function (A, B) {
+            var R = new Array(16);
+    
+            R[0]  = (A[0] * B[ 0])    +    (A[4] * B[ 1])   +    (A[8 ] * B[ 2]) + (A[12] * B[ 3]);
+            R[1]  = (A[1] * B[ 0])    +    (A[5] * B[ 1])   +    (A[ 9] * B[ 2]) + (A[13] * B[ 3]);
+            R[2]  = (A[2] * B[ 0])    +    (A[6] * B[ 1])   +    (A[10] * B[ 2]) + (A[14] * B[ 3]);
+            R[3]  = (A[3] * B[ 0])    +    (A[7] * B[ 1])   +    (A[11] * B[ 2]) + (A[15] * B[ 3]);
+    
+            R[4]  = (A[0] * B[ 4])    +    (A[4] * B[ 5])   +    (A[ 8] * B[ 6]) + (A[12] * B[ 7]);
+            R[5]  = (A[1] * B[ 4])    +    (A[5] * B[ 5])   +    (A[ 9] * B[ 6]) + (A[13] * B[ 7]);
+            R[6]  = (A[2] * B[ 4])    +    (A[6] * B[ 5])   +    (A[10] * B[ 6]) + (A[14] * B[ 7]);
+            R[7]  = (A[3] * B[ 4])    +    (A[7] * B[ 5])   +    (A[11] * B[ 6]) + (A[15] * B[ 7]);
+    
+            R[8]  = (A[0] * B[ 8])    +    (A[4] * B[ 9])   +    (A[ 8] * B[10]) + (A[12] * B[11]);
+            R[9]  = (A[1] * B[ 8])    +    (A[5] * B[ 9])   +    (A[ 9] * B[10]) + (A[13] * B[11]);
+            R[10] = (A[2] * B[ 8])    +    (A[6] * B[ 9])   +    (A[10] * B[10]) + (A[14] * B[11]);
+            R[11] = (A[3] * B[ 8])    +    (A[7] * B[ 9])   +    (A[11] * B[10]) + (A[15] * B[11]);
+    
+            R[12] = (A[0] * B[12])    +    (A[4] * B[13])   +    (A[ 8] * B[14]) + (A[12] * B[15]);
+            R[13] = (A[1] * B[12])    +    (A[5] * B[13])   +    (A[ 9] * B[14]) + (A[13] * B[15]);
+            R[14] = (A[2] * B[12])    +    (A[6] * B[13])   +    (A[10] * B[14]) + (A[14] * B[15]);
+            R[15] = (A[3] * B[12])    +    (A[7] * B[13])   +    (A[11] * B[14]) + (A[15] * B[15]);
+    
+            return R;
+        };
+    
+        const rot_matrix_x      = ( matrix, radians ) => {
+            var sin = Math.sin( radians );
+            var cos = Math.cos( radians );
+    
+            if (radians < 0) { sin *= -1; }
         
-        device.queue.submit([commandEncoder.finish()]);
-    }
-
-    render()
-
-    let start_of_mouse_drag;
-
-    onpointerdown = event => {
-        event.preventDefault();
-        start_of_mouse_drag = event;
-    }
-
-    onpointerup = event => {
-        event.preventDefault();        
-        start_of_mouse_drag = null;
-    }
-
-    addEventListener( "wheel", event => { 
-        event.preventDefault();        
-
-        scene.delta_h += event.deltaX;
-
-        if (Number.isInteger(event.deltaY)) {
-            scene.delta_v += event.deltaY;
+            var M = new Array(16);
+    
+            M[0] = 1;  M[4] = 0;    M[ 8] = 0;    M[12] = 0;
+            M[1] = 0;  M[5] = cos;  M[ 9] = -sin; M[13] = 0;
+            M[2] = 0;  M[6] = sin;  M[10] = cos;  M[14] = 0;
+            M[3] = 0;  M[7] = 0;    M[11] = 0;    M[15] = 1;        
+    
+            return multiply( matrix, M );
         }
-        else {
-            scene.delta_z -= event.deltaY;
+    
+        const rot_matrix_y      = ( matrix, radians ) => {
+            var sin = Math.sin( radians );
+            var cos = Math.cos( radians );
+    
+            if (radians < 0) { sin *= -1; }
+        
+            var M = new Array(16);
+    
+            M[0] = cos;  M[4] = 0;  M[8]  = sin;    M[12] = 0;
+            M[1] = 0;    M[5] = 1;  M[9]  = 0;      M[13] = 0;
+            M[2] = -sin; M[6] = 0;  M[10] = cos;    M[14] = 0;
+            M[3] = 0;    M[7] = 0;  M[11] = 0;      M[15] = 1;  
+    
+            return multiply( matrix, M );
         }
-
-        render(); 
-    }, { passive: false })
-
-    onpointermove = event => {
-        var delta_x, delta_y, x_limit, y_limit, new_x, new_y;
-
-
-        //console.log("drag event x,y = " + event.clientX + " " + event.clientY + "  " + event.which);
-        if (start_of_mouse_drag) {
-            delta_x = -(event.clientX - start_of_mouse_drag.clientX) * 0.1745;
-            delta_y =  (event.clientY - start_of_mouse_drag.clientY) * 0.1745;
-
-            scene.delta_x += event.movementX;
-            scene.delta_y += event.movementY;
-
-            scene.angle_x += delta_x;
-            scene.angle_y += delta_y;
+    
+        const rot_matrix_z      = ( matrix, radians ) => {
+            var sin = Math.sin( radians );
+            var cos = Math.cos( radians );
+    
+            if (radians < 0) { sin *= -1; }
+        
+            var M = new Array(16);
+    
+            M[0] = cos;  M[4] = -sin;  M[8]  = 0;  M[12] = 0;
+            M[1] = sin;  M[5] = cos;   M[9]  = 0;  M[13] = 0;
+            M[2] = 0;    M[6] = 0;     M[10] = 1;  M[14] = 0;
+            M[3] = 0;    M[7] = 0;     M[11] = 0;  M[15] = 1;
+    
+            return multiply( matrix, M );
+        }
+    
+        const scale_matrix      = ( matrix, sx, sy, sz ) => {
+            var M = new Array(16);
+    
+            M[0] = sx || 1; M[4] = 0;        M[ 8] = 0;        M[12] = 0;
+            M[1] = 0;       M[5] = sy || sx; M[ 9] = 0;        M[13] = 0;
+            M[2] = 0;       M[6] = 0;        M[10] = sz || sx; M[14] = 0;
+            M[3] = 0;       M[7] = 0;        M[11] = 0;        M[15] = 1;
             
-            render();
-
-            start_of_mouse_drag = event;
-            event.preventDefault();
+            return multiply( matrix, M );
         }
+    
+        const translate_matrix  = ( matrix, dx, dy, dz ) => {
+            var M = new Array(16);
+            
+            M[0] = 1;  M[4] = 0;  M[ 8] = 0;  M[12] = dx || 0;
+            M[1] = 0;  M[5] = 1;  M[ 9] = 0;  M[13] = dy || 0;
+            M[2] = 0;  M[6] = 0;  M[10] = 1;  M[14] = dz || 0;
+            M[3] = 0;  M[7] = 0;  M[11] = 0;  M[15] = 1;
+    
+            return multiply( matrix, M );
+        }
+        
+    
+        let scene = {
+            angle_x : 0,
+            delta_x : 0,
+            delta_v : 0,
+            delta_h : 0,
+            delta_y : 0,
+            angle_y : 0,
+            delta_z : 0
+        }
+    
+        projection = translate_matrix( 
+            projection, 0, 0, -1 );
+    
+    
+        function render () {
+    
+            let viewmat = structuredClone(projection);
+            var vArrays = structuredClone(varrays);
+    
+            let scale_z = 1 + (scene.delta_z / (innerHeight/2));
+            if (scale_z < 0) { scale_z /= -1;}
+    
+            let pan_x = scene.delta_h / -(innerWidth/2); 
+            let pan_y = scene.delta_v /  (innerHeight/2); 
+    
+            let angle_x = (((scene.delta_y % innerHeight) / innerHeight) - 0.5) * (Math.PI/1) + Math.PI/-2;
+            let angle_y = (((scene.delta_x % innerWidth) / innerWidth) - 0.5) * (Math.PI/1) + Math.PI/2;
+    
+            viewmat = translate_matrix( viewmat, pan_x, pan_y )
+            viewmat = rot_matrix_x( viewmat, angle_x )
+            viewmat = rot_matrix_y( viewmat, angle_y )
+            viewmat = scale_matrix( viewmat, scale_z )
+            // viewmat = rot_matrix_z( viewmat, Math.PI / 30 )
+    
+        
+            mul_matrix_vecs( viewmat, vArrays )
+    
+            const renderPassDescriptor = {
+                colorAttachments: [{
+                    clearValue  : clearColor,
+                    loadOp      : 'clear',
+                    storeOp     : 'store',
+                    view        : context.getCurrentTexture().createView()
+                }]
+            };
+    
+            const commandEncoder = device.createCommandEncoder();
+            const passEncoder    = commandEncoder.beginRenderPass(renderPassDescriptor);
+    
+            vbuffers.forEach((buffer, i) => 
+                passEncoder.setVertexBuffer(i, buffer)
+            );
+    
+            vbuffers.forEach((buffer, i) => 
+                device.queue.writeBuffer(buffer, 0, vArrays[i], 0, vArrays[i].length)
+            )
+                
+            passEncoder.setPipeline(renderPipeline);
+            passEncoder.draw( vertices.length/8 );
+            passEncoder.end();
+            
+            device.queue.submit([commandEncoder.finish()]);
+        }
+    
+        render()
+    
+        let start_of_mouse_drag;
+    
+        onpointerdown = event => {
+            event.preventDefault();
+            start_of_mouse_drag = event;
+        }
+    
+        onpointerup = event => {
+            event.preventDefault();        
+            start_of_mouse_drag = null;
+        }
+    
+        addEventListener( "wheel", event => { 
+            event.preventDefault();        
+    
+            scene.delta_h += event.deltaX;
+    
+            if (Number.isInteger(event.deltaY)) {
+                scene.delta_v += event.deltaY;
+            }
+            else {
+                scene.delta_z -= event.deltaY;
+            }
+    
+            render(); 
+        }, { passive: false })
+    
+        onpointermove = event => {
+            var delta_x, delta_y, x_limit, y_limit, new_x, new_y;
+    
+    
+            //console.log("drag event x,y = " + event.clientX + " " + event.clientY + "  " + event.which);
+            if (start_of_mouse_drag) {
+                delta_x = -(event.clientX - start_of_mouse_drag.clientX) * 0.1745;
+                delta_y =  (event.clientY - start_of_mouse_drag.clientY) * 0.1745;
+    
+                scene.delta_x += event.movementX;
+                scene.delta_y += event.movementY;
+    
+                scene.angle_x += delta_x;
+                scene.angle_y += delta_y;
+                
+                render();
+    
+                start_of_mouse_drag = event;
+                event.preventDefault();
+            }
+        }
+    
+    
+        console.log({
+            adapter, device, canvas, context,
+            renderPipeline, buffer
+        })
     }
 
+    function readGlb () {
+        const view      = new DataView( buffer );
+        const magic     = view.getUint32(0, true);
+        const version   = view.getUint32(4, true);
+        const length    = view.getUint32(8, true);
+        const decode    = TextDecoder.prototype.decode.bind( new TextDecoder ); 
 
+        const readChunk = ( offset = 12 ) => {
+            const length = view.getUint32( offset, true ); offset += 4
+            const type   = view.getUint32( offset, true ); offset += 4
+            const bytes  = new Uint8Array( buffer, offset, length );
+
+            switch (type) {
+                case CHUNK_TYPE_JSON:
+                    const json   = JSON.parse( decode(bytes) ); offset += length;
+                    console.warn("json:", json)
+                break;
+
+                case CHUNK_TYPE_BIN:
+                    const isDRACO = decode( bytes.slice(0,5) ) === "DRACO"; 
+
+                    if (isDRACO) {
+                        offset += 5;
+
+                        const major_version  = view.getUint8(offset++);
+                        const minor_version  = view.getUint8(offset++);
+
+                        const encoder_type   = view.getUint8(offset++);
+                        const encoder_method = view.getUint8(offset++);
+                        const flags          = view.getUint16(offset, true); offset += 2
+
+                        if (flags & METADATA_FLAG_MASK) {
+                            //DecodeMetadata
+                            console.error("decode metaheader!!!")
+                        }
+
+                        console.log(bytes.slice())
+
+                        // LEB128 (varUI32/varUI64) reader as specified by Draco.
+                        function readVarUint32(view, off) {
+                            let result = 0;
+                            let shift = 0;
+                            let b;
+                            let pos = off;
+                            do {
+                                b = view.getUint8(pos++);
+                                result |= (b & 0x7F) << shift;
+                                shift += 7;
+                            } while (b & 0x80);
+                            return { value: result >>> 0, offset: pos };
+                        }
+
+                        let edgebreaker_traversal_type,
+                            num_encoded_vertices,
+                            num_faces,
+                            num_attribute_data,
+                            num_encoded_symbols,
+                            num_encoded_split_symbols,
+                            num_points,
+                            connectivity_method,
+                            num_topology_splits,
+                            source_id_delta,
+                            split_id_delta,
+                            source_edge_bit,
+                            source_symbol_id,
+                            split_symbol_id,
+                            eb_symbol_buffer_size,
+                            eb_symbol_buffer,
+                            eb_start_face_buffer_prob_zero,
+                            eb_start_face_buffer_size,
+                            eb_start_face_buffer,
+                            attribute_connectivity_decoders_prob_zero,
+                            attribute_connectivity_decoders_size,
+                            attribute_connectivity_decoders_buffer,
+                            corner,
+                            ebv_context_symbols,
+                            ebv_context_counters,
+                            edge_breaker_symbol_to_topology_id,
+                            _
+                        ;
+
+                        let is_vert_hole_ = new Array();
+                        
+                        //DecodeConnectivityData
+                        switch (encoder_method) 
+                        {    
+                            case MESH_SEQUENTIAL_ENCODING:
+                                {
+                                    const r1 = readVarUint32(view, offset);
+                                    num_faces = r1.value;
+                                    offset = r1.offset;
+                                }
+                                {
+                                    const r2 = readVarUint32(view, offset);
+                                    num_points = r2.value;
+                                    offset = r2.offset;
+                                }
+                                {
+                                    connectivity_method =
+                                        view.getUint8(offset++); // UI8                                
+                                }
+                            break;
+                                
+                            case MESH_EDGEBREAKER_ENCODING:
+                                let curr_att_dec = 0;
+                                let curr_att = 0;
+                                //ParseEdgebreakerConnectivityData();
+                                {
+                                    edgebreaker_traversal_type = 
+                                        view.getUint8(offset++); //UI8
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_encoded_vertices = r.value;
+                                    offset = r.offset;
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_faces = r.value;
+                                    offset = r.offset;
+                                }
+                                {
+                                    num_attribute_data = 
+                                        view.getUint8(offset++); //UI8
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_encoded_symbols = r.value;
+                                    offset = r.offset;
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_encoded_split_symbols = r.value;
+                                    offset = r.offset;
+                                }
+
+
+                                //DecodeTopologySplitEvents()
+                                {
+                                    //ParseTopologySplitEvents
+                                    {
+                                        {
+                                            const r = readVarUint32(view, offset);
+                                            num_topology_splits = r.value;
+                                            offset = r.offset;
+                                        }
+                                        {
+                                            source_id_delta   = new Array(num_topology_splits);
+                                            split_id_delta    = new Array(num_topology_splits);
+                                            source_edge_bit   = new Array(num_topology_splits);
+            
+                                            for (let i = 0; i < num_topology_splits; ++i) 
+                                            {
+                                                {
+                                                    const r = readVarUint32(view, offset);
+                                                    source_id_delta[i] = r.value;
+                                                    offset = r.offset;
+                                                }
+                                                {
+                                                    const r = readVarUint32(view, offset);
+                                                    split_id_delta[i] = r.value;
+                                                    offset = r.offset;
+                                                }                                                               
+                                            }
+        
+                                            let max_bit_offset = Math.ceil( num_topology_splits/8 );
+                                            let bits_will_read = new Array();
+        
+                                            while (max_bit_offset--) {
+                                                Reflect.apply(
+                                                    Array.prototype.push, bits_will_read,
+                                                    view.getUint8(offset++)
+                                                        .toString(2).split("").map(Number)
+                                                        .reverse()
+                                                )
+                                            }
+        
+                                            for (let i = 0; i < num_topology_splits; ++i) {
+                                                source_edge_bit[i] = bits_will_read.splice(0,1).at(0);  //f[1]
+                                            }
+                                        }
+                                    }
+                                    //ProcessSplitData
+                                    {
+                                        source_symbol_id = new Array(source_id_delta.length).fill(0);
+                                        split_symbol_id = new Array(source_id_delta.length).fill(0);
+
+                                        let last_id = 0;
+                                        for (let i = 0; i < source_id_delta.length; ++i) {
+                                            source_symbol_id[i] = source_id_delta[i] + last_id;
+                                            split_symbol_id[i] = source_symbol_id[i] - split_id_delta[i];
+                                            last_id = source_symbol_id[i];
+                                        }
+                                    }
+                                }
+
+                                //EdgebreakerTraversalStart
+                                let last_symbol_ = -1;
+                                let active_context_ = -1;
+                                {
+                                    switch (edgebreaker_traversal_type)
+                                    {
+                                        case STANDARD_EDGEBREAKER:
+                                        //DecodeEdgebreakerTraversalStandardData();
+                                        {
+                                            //ParseEdgebreakerTraversalStandardSymbolData()
+                                            {
+                                                {
+                                                    const r = readVarUint32(view, offset);
+                                                    eb_symbol_buffer_size = r.value;
+                                                    offset = r.offset;
+                                                }
+                                                {
+                                                    eb_symbol_buffer = new Uint8Array( 
+                                                        view.buffer, 
+                                                        view.byteOffset + offset, 
+                                                        eb_symbol_buffer_size 
+                                                    );
+                                                    
+                                                    offset = offset + eb_symbol_buffer.length;
+                                                }
+                                            }
+
+                                            //ParseEdgebreakerTraversalStandardFaceData()
+                                            {
+                                                {
+                                                    eb_start_face_buffer_prob_zero =
+                                                        view.getUint8(offset++);
+                                                }
+                                                {
+                                                    const r = readVarUint32(view, offset);
+                                                    eb_start_face_buffer_size = r.value;
+                                                    offset = r.offset;
+                                                }
+                                                {
+                                                    eb_start_face_buffer = new Uint8Array( 
+                                                        view.buffer, 
+                                                        view.byteOffset + offset, 
+                                                        eb_start_face_buffer_size 
+                                                    );                                             
+                                                    
+                                                    offset = offset + eb_start_face_buffer.length;
+                                                }
+                                            }
+
+                                            //ParseEdgebreakerTraversalStandardAttributeConnectivityData()
+                                            {
+                                                attribute_connectivity_decoders_prob_zero   = new Uint8Array(num_attribute_data);
+                                                attribute_connectivity_decoders_size        = new Uint32Array(num_attribute_data);
+                                                attribute_connectivity_decoders_buffer      = new Array(num_attribute_data);
+
+                                                for (let i = 0; i < num_attribute_data; ++i) 
+                                                {
+                                                    {
+                                                        attribute_connectivity_decoders_prob_zero[i] =
+                                                            view.getUint8(offset++);
+                                                    }
+                                                    {
+                                                        const r = readVarUint32(view, offset);
+                                                        attribute_connectivity_decoders_size[i] = r.value;
+                                                        offset = r.offset;
+                                                    }
+                                                    {
+                                                        attribute_connectivity_decoders_buffer[i] = new Uint8Array( 
+                                                            view.buffer, 
+                                                            view.byteOffset + offset, 
+                                                            attribute_connectivity_decoders_size[i] 
+                                                        );                                             
+                                                        
+                                                        offset = offset + attribute_connectivity_decoders_buffer[i].length;
+                                                    }
+                                                }
+                                            }   
+
+                                        }
+                                        break;
+
+                                        case VALENCE_EDGEBREAKER:
+                                        //EdgeBreakerTraversalValenceStart();
+                                        {
+                                            
+                                        }
+                                        break;
+
+                                        default: throw {edgebreaker_traversal_type}; break;
+                                    }
+                                }
+
+                                //DecodeEdgeBreakerConnectivity
+                                let last_vert_added = -1;
+                                {
+                                    {
+                                        Object.assign( 
+                                            is_vert_hole_, 
+                                            {
+                                                [ num_encoded_vertices + num_encoded_split_symbols ] : true
+                                            }
+                                        );
+                                    }
+                                    
+                                    for (let i = 0; i < num_encoded_symbols; ++i) 
+                                    {
+                                        //EdgebreakerDecodeSymbol[s]
+                                        {
+                                            switch (edgebreaker_traversal_type)
+                                            {
+                                                case VALENCE_EDGEBREAKER:
+                                                    //EdgebreakerValenceDecodeSymbol
+                                                    {
+                                                        if (active_context_ !== -1) {
+                                                            const symbol_id = ebv_context_symbols[ active_context_ ][ --ebv_context_counters[ active_context_ ] ];
+                                                            last_symbol_ = edge_breaker_symbol_to_topology_id[ symbol_id ];
+                                                        } 
+                                                        else {
+                                                            last_symbol_ = TOPOLOGY_E;
+                                                        }
+                                                    }
+                                                break;
+
+                                                case STANDARD_EDGEBREAKER:
+                                                    //ParseEdgebreakerStandardSymbol
+                                                    {
+                                                        let symbol = eb_symbol_buffer.ReadBits(1);
+
+                                                        if (symbol !== TOPOLOGY_C) {
+                                                            // Else decode two additional bits.
+                                                            const symbol_suffix = eb_symbol_buffer.ReadBits(2);
+                                                            symbol |= (symbol_suffix << 1);
+                                                        }
+
+                                                        last_symbol_ = symbol;                                                            
+                                                    }
+                                                break;
+
+                                                default: throw "EdgebreakerDecodeSymbol"; break;
+                                            }
+                                        }
+                                    }
+
+                                    //ProcessInteriorEdges
+                                }
+
+                                
+                            break;
+                        }
+
+                        console.warn("draco:", 
+                            "isDRACO:", isDRACO, 
+                            "major_version:", major_version, 
+                            "minor_version:", minor_version,
+                            "encoder_type:", encoder_type,
+                            "encoder_method:", encoder_method,
+                            "flags:", flags,
+                        );
+                        
+                        console.log({
+                                    MESH_SEQUENTIAL_ENCODING: {
+                                        num_faces,
+                                        num_points,
+                                        connectivity_method,
+                                    },
+                                    MESH_EDGEBREAKER_ENCODING : {
+                                        num_faces,
+                                        edgebreaker_traversal_type,
+                                        num_encoded_vertices,
+                                        num_attribute_data,
+                                        num_encoded_symbols,
+                                        num_encoded_split_symbols,
+                                        DecodeTopologySplitEvents : {
+                                            num_topology_splits,
+                                            ParseTopologySplitEvents: {
+                                                source_id_delta,
+                                                split_id_delta,
+                                                source_edge_bit,
+                                            },
+                                            ProcessSplitData : {
+                                                source_symbol_id,
+                                                split_symbol_id
+                                            }
+                                        },
+                                        EdgebreakerTraversalStart : {
+                                            STANDARD_EDGEBREAKER : {
+                                                DecodeEdgebreakerTraversalStandardData : {
+                                                    ParseEdgebreakerTraversalStandardSymbolData : {
+                                                        eb_symbol_buffer_size,
+                                                        eb_symbol_buffer
+                                                    },
+                                                    ParseEdgebreakerTraversalStandardFaceData : {
+                                                        eb_start_face_buffer_prob_zero,
+                                                        eb_start_face_buffer_size,
+                                                        eb_start_face_buffer,
+                                                    },
+                                                    ParseEdgebreakerTraversalStandardAttributeConnectivityData : {
+                                                        attribute_connectivity_decoders_prob_zero,
+                                                        attribute_connectivity_decoders_size,
+                                                        attribute_connectivity_decoders_buffer,
+                                                    },
+                                                }
+                                            },
+                                            VALENCE_EDGEBREAKER : {
+                                                EdgeBreakerTraversalValenceStart : {
+                                                }
+                                            }
+                                        },
+                                        DecodeEdgeBreakerConnectivity : {
+                                            EdgebreakerDecodeSymbol : {},
+                                            ProcessInteriorEdges : {},
+                                        }
+                                    },
+                                })
+
+
+                    }
+                break;
+
+                default:
+                    console.error("undefined type:", type, bytes)
+                break;
+            }
+
+            return offset;
+        }
+
+        console.log({
+            magic: "0x" + magic.toString(16),
+            version,
+            length
+        });
+
+        const offset = readChunk();
+        readChunk(offset)
+    }
+
+    readGlb();
 </script>
 </html>
