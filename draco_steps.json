@@ -1,0 +1,90 @@
+{
+  "title": "DRACO decode step plan",
+  "source_glb_offset": 32372,
+  "description": "High-level, ordered steps to implement the Draco EdgeBreaker connectivity + attribute decoder by following draco-spec.html anchors.",
+  "steps": [
+    {
+      "id": "01_enter_main_function",
+      "name": "DecodeEdgeBreakerConnectivity",
+      "reference": "draco-spec.html#decodeedgebreakerconnectivity",
+      "arguments": [
+        { "name": "offset", "type": "Uint32", "default": 32372 },
+        { "name": "draco_decoded", "type": "Object|null", "default": null }
+      ],
+      "description": "Top-level entry for EdgeBreaker connectivity decoding. Read connectivity header and dispatch to traversal and symbol decoders.",
+      "substeps": [
+        {
+          "id": "01_01_parse_connectivity_header",
+          "name": "ParseEdgebreakerConnectivityData",
+          "reference": "draco-spec.html#parseedgebreakerconnectivitydata",
+          "description": "Read traversalType, numEncodedVertices, numFaces, numAttributeData, numEncodedSymbols, numTopologySplits and consume topology split bytes. Output a parsed header object."
+        },
+        {
+          "id": "01_02_parse_traversal_symbol_blocks",
+          "name": "ParseEdgebreakerTraversalStandardSymbolData",
+          "reference": "draco-spec.html#parseedgebreakertraversalstandardsymboldata",
+          "description": "Locate and slice the encoded symbol buffer, and the start-face buffer. Keep raw Uint8Arrays for symbol/start-face streams."
+        },
+        {
+          "id": "01_03_build_symbol_tables",
+          "name": "BuildSymbolTables",
+          "reference": "draco-spec.html#buildsymboltables",
+          "description": "Consume token bytes to build token probability table, LUT (if required), and total frequency. This feeds the rANS decoder. Expected output: token_probs[], total, token_bytes_consumed.",
+          "next": ["01_04_decode_tagged_rans","01_05_decode_raw_symbols"]
+        },
+        {
+          "id": "01_04_decode_tagged_rans",
+          "name": "DecodeTaggedSymbols",
+          "reference": "draco-spec.html#decodetaggedsymbols",
+          "description": "If tagged-rANS (tag byte == 0) present, initialize rANS decoder state (RansInitDecoder) and repeatedly call RansRead/Fetch_sym to extract symbol stream. Produce decodedSymbols[]."
+        },
+        {
+          "id": "01_05_decode_raw_symbols",
+          "name": "DecodeRawSymbols",
+          "reference": "draco-spec.html#decoderawsymbols",
+          "description": "Fallback: treat symbolBuffer as raw symbols or simple entropy-coded stream; produce decodedSymbols[]."
+        },
+        {
+          "id": "01_06_edgebreaker_traversal_start",
+          "name": "EdgeBreakerTraversalStart",
+          "reference": "draco-spec.html#edgebreakertraversalstart",
+          "description": "Initialize corner arrays, opposite_corners, corner_to_vertex and active stack. Begin traversal loop consuming decodedSymbols (or direct bitstream) and call ProcessCorner/NewActiveCornerReached as specified."
+        },
+        {
+          "id": "01_07_process_corner",
+          "name": "EdgeBreakerTraverser_ProcessCorner",
+          "reference": "draco-spec.html#edgebreakertraverser_processcorner",
+          "description": "For each traversal symbol, map to topology event (C,S,L,R,E), update opposite corners and corner->vertex mapping. Record faces as triangles (vertex indices)."
+        },
+        {
+          "id": "01_08_new_active_corner",
+          "name": "NewActiveCornerReached",
+          "reference": "draco-spec.html#newactivecornerreached",
+          "description": "Follow spec pseudocode to set opposites, push/pop active stack, detect topology splits (using sourceIdDelta/splitIdDelta/sourceEdgeBit), and schedule ReplaceVerts if needed."
+        },
+        {
+          "id": "01_09_finalize_connectivity",
+          "name": "FinalizeConnectivity",
+          "description": "Resolve deferred ReplaceVerts chains, produce final faces Uint32Array and vertex count."
+        }
+      ]
+    },
+    {
+      "id": "02_attributes",
+      "name": "Attribute Decoding",
+      "reference": "draco-spec.html#attribute-encoding",
+      "description": "Once connectivity is available, parse and decode attribute blocks (positions first).",
+      "substeps": [
+        { "id": "02_01_parse_attribute_header", "name": "ParseAttributeHeader", "reference": "draco-spec.html#attribute-encoding", "description": "Read attribute count, attribute headers (type, unique id, encoder type)." },
+        { "id": "02_02_decode_attribute_streams", "name": "DecodeAttributeData", "reference": "draco-spec.html#decodesymbols", "description": "For each attribute, decode tagged-rANS streams or integer/quantized encodings and reconstruct per-corner attribute values; use EdgeBreakerAttributeTraverser_ProcessCorner where applicable." },
+        { "id": "02_03_apply_prediction_and_dequantize", "name": "ApplyPredictionAndDequantize", "description": "Apply prediction reversal (parallelogram, difference, etc.) and dequantize to float positions." },
+        { "id": "02_04_map_to_vertices", "name": "MapAttributesToVertices", "description": "Using corner->vertex mapping from connectivity, aggregate per-corner attributes to per-vertex arrays (positions Float32Array)." }
+      ]
+    },
+    {
+      "id": "99_validation",
+      "name": "Validation and Smoke Tests",
+      "description": "Sanity checks: face count equals header.numFaces, vertex count equals header.numEncodedVertices, positions length == numVertices*3, no infinite loops. Add timeouts/safety counters for traversal during early testing."
+    }
+  ]
+}

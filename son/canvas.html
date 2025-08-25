@@ -5,7 +5,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
 <!-- onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)" -->
-<body style="touch-action: manipulation; overscroll-behavior: none; pointer-events: none; margin: 0; width: 100vw; height: 100vh;">
+<body style="touch-action: manipulation; overscroll-behavior: none; pointer-events: none; margin: 0; width: 100vw; height: 100vh; background-color: black;">
     <canvas width="1260" height="1990" style="width: 630px; height: 995px; position: fixed;"></canvas>
 </body>
 <script type="x-shader/x-fragment" id="shaders">
@@ -47,6 +47,9 @@
         return fragData.color;
     }
 </script>
+
+<!-- <script src="../node_modules/draco3d/draco_decoder_nodejs.js"></script> -->
+<script src="../draco_decoder_gltf.js"></script>
 <script type="module">
     const CHUNK_TYPE_JSON                                      = 0x4E4F534A;
     const CHUNK_TYPE_BIN                                       = 0x004E4942;
@@ -176,6 +179,7 @@
         const vertices  = new Float32Array( tcount * 3 * 8 );
         const vertsView = new DataView( vertices.buffer );
         const readLen   = view.byteLength;
+
     
         const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 };
     
@@ -621,419 +625,120 @@
         })
     }
 
-    function readGlb () {
+    async function readGlb () {
         const view      = new DataView( buffer );
         const magic     = view.getUint32(0, true);
         const version   = view.getUint32(4, true);
         const length    = view.getUint32(8, true);
         const decode    = TextDecoder.prototype.decode.bind( new TextDecoder ); 
 
-        const readChunk = ( offset = 12 ) => {
+        const readChunk = async ( offset = 12 ) => {
             const length = view.getUint32( offset, true ); offset += 4
             const type   = view.getUint32( offset, true ); offset += 4
             const bytes  = new Uint8Array( buffer, offset, length );
 
             switch (type) {
                 case CHUNK_TYPE_JSON:
-                    const json   = JSON.parse( decode(bytes) ); offset += length;
+                    const json = JSON.parse( decode(bytes) ); offset += length;
                     console.warn("json:", json)
                 break;
 
                 case CHUNK_TYPE_BIN:
                     const isDRACO = decode( bytes.slice(0,5) ) === "DRACO"; 
+                    let decoded_draco = null;
 
                     if (isDRACO) {
-                        offset += 5;
+                        // Use the compact Draco decoder if available on window (draco_decoder_min.js should expose DracoDecoderMin)
+                        try {
 
-                        const major_version  = view.getUint8(offset++);
-                        const minor_version  = view.getUint8(offset++);
+                            DracoDecoderModule().then(decoderModule => {
+                                const decoder = new decoderModule.Decoder();
+                                console.log(decoder)
 
-                        const encoder_type   = view.getUint8(offset++);
-                        const encoder_method = view.getUint8(offset++);
-                        const flags          = view.getUint16(offset, true); offset += 2
-
-                        if (flags & METADATA_FLAG_MASK) {
-                            //DecodeMetadata
-                            console.error("decode metaheader!!!")
-                        }
-
-                        console.log(bytes.slice())
-
-                        // LEB128 (varUI32/varUI64) reader as specified by Draco.
-                        function readVarUint32(view, off) {
-                            let result = 0;
-                            let shift = 0;
-                            let b;
-                            let pos = off;
-                            do {
-                                b = view.getUint8(pos++);
-                                result |= (b & 0x7F) << shift;
-                                shift += 7;
-                            } while (b & 0x80);
-                            return { value: result >>> 0, offset: pos };
-                        }
-
-                        let edgebreaker_traversal_type,
-                            num_encoded_vertices,
-                            num_faces,
-                            num_attribute_data,
-                            num_encoded_symbols,
-                            num_encoded_split_symbols,
-                            num_points,
-                            connectivity_method,
-                            num_topology_splits,
-                            source_id_delta,
-                            split_id_delta,
-                            source_edge_bit,
-                            source_symbol_id,
-                            split_symbol_id,
-                            eb_symbol_buffer_size,
-                            eb_symbol_buffer,
-                            eb_start_face_buffer_prob_zero,
-                            eb_start_face_buffer_size,
-                            eb_start_face_buffer,
-                            attribute_connectivity_decoders_prob_zero,
-                            attribute_connectivity_decoders_size,
-                            attribute_connectivity_decoders_buffer,
-                            corner,
-                            ebv_context_symbols,
-                            ebv_context_counters,
-                            edge_breaker_symbol_to_topology_id,
-                            _
-                        ;
-
-                        let is_vert_hole_ = new Array();
-                        
-                        //DecodeConnectivityData
-                        switch (encoder_method) 
-                        {    
-                            case MESH_SEQUENTIAL_ENCODING:
+                                switch (decoder.GetEncodedGeometryType(bytes)) 
                                 {
-                                    const r1 = readVarUint32(view, offset);
-                                    num_faces = r1.value;
-                                    offset = r1.offset;
-                                }
-                                {
-                                    const r2 = readVarUint32(view, offset);
-                                    num_points = r2.value;
-                                    offset = r2.offset;
-                                }
-                                {
-                                    connectivity_method =
-                                        view.getUint8(offset++); // UI8                                
-                                }
-                            break;
-                                
-                            case MESH_EDGEBREAKER_ENCODING:
-                                let curr_att_dec = 0;
-                                let curr_att = 0;
-                                //ParseEdgebreakerConnectivityData();
-                                {
-                                    edgebreaker_traversal_type = 
-                                        view.getUint8(offset++); //UI8
-                                }
-                                {
-                                    const r = readVarUint32(view, offset);
-                                    num_encoded_vertices = r.value;
-                                    offset = r.offset;
-                                }
-                                {
-                                    const r = readVarUint32(view, offset);
-                                    num_faces = r.value;
-                                    offset = r.offset;
-                                }
-                                {
-                                    num_attribute_data = 
-                                        view.getUint8(offset++); //UI8
-                                }
-                                {
-                                    const r = readVarUint32(view, offset);
-                                    num_encoded_symbols = r.value;
-                                    offset = r.offset;
-                                }
-                                {
-                                    const r = readVarUint32(view, offset);
-                                    num_encoded_split_symbols = r.value;
-                                    offset = r.offset;
-                                }
-
-
-                                //DecodeTopologySplitEvents()
-                                {
-                                    //ParseTopologySplitEvents
-                                    {
-                                        {
-                                            const r = readVarUint32(view, offset);
-                                            num_topology_splits = r.value;
-                                            offset = r.offset;
-                                        }
-                                        {
-                                            source_id_delta   = new Array(num_topology_splits);
-                                            split_id_delta    = new Array(num_topology_splits);
-                                            source_edge_bit   = new Array(num_topology_splits);
-            
-                                            for (let i = 0; i < num_topology_splits; ++i) 
-                                            {
-                                                {
-                                                    const r = readVarUint32(view, offset);
-                                                    source_id_delta[i] = r.value;
-                                                    offset = r.offset;
-                                                }
-                                                {
-                                                    const r = readVarUint32(view, offset);
-                                                    split_id_delta[i] = r.value;
-                                                    offset = r.offset;
-                                                }                                                               
-                                            }
-        
-                                            let max_bit_offset = Math.ceil( num_topology_splits/8 );
-                                            let bits_will_read = new Array();
-        
-                                            while (max_bit_offset--) {
-                                                Reflect.apply(
-                                                    Array.prototype.push, bits_will_read,
-                                                    view.getUint8(offset++)
-                                                        .toString(2).split("").map(Number)
-                                                        .reverse()
-                                                )
-                                            }
-        
-                                            for (let i = 0; i < num_topology_splits; ++i) {
-                                                source_edge_bit[i] = bits_will_read.splice(0,1).at(0);  //f[1]
-                                            }
-                                        }
-                                    }
-                                    //ProcessSplitData
-                                    {
-                                        source_symbol_id = new Array(source_id_delta.length).fill(0);
-                                        split_symbol_id = new Array(source_id_delta.length).fill(0);
-
-                                        let last_id = 0;
-                                        for (let i = 0; i < source_id_delta.length; ++i) {
-                                            source_symbol_id[i] = source_id_delta[i] + last_id;
-                                            split_symbol_id[i] = source_symbol_id[i] - split_id_delta[i];
-                                            last_id = source_symbol_id[i];
-                                        }
-                                    }
-                                }
-
-                                //EdgebreakerTraversalStart
-                                let last_symbol_ = -1;
-                                let active_context_ = -1;
-                                {
-                                    switch (edgebreaker_traversal_type)
-                                    {
-                                        case STANDARD_EDGEBREAKER:
-                                        //DecodeEdgebreakerTraversalStandardData();
-                                        {
-                                            //ParseEdgebreakerTraversalStandardSymbolData()
-                                            {
-                                                {
-                                                    const r = readVarUint32(view, offset);
-                                                    eb_symbol_buffer_size = r.value;
-                                                    offset = r.offset;
-                                                }
-                                                {
-                                                    eb_symbol_buffer = new Uint8Array( 
-                                                        view.buffer, 
-                                                        view.byteOffset + offset, 
-                                                        eb_symbol_buffer_size 
-                                                    );
-                                                    
-                                                    offset = offset + eb_symbol_buffer.length;
-                                                }
-                                            }
-
-                                            //ParseEdgebreakerTraversalStandardFaceData()
-                                            {
-                                                {
-                                                    eb_start_face_buffer_prob_zero =
-                                                        view.getUint8(offset++);
-                                                }
-                                                {
-                                                    const r = readVarUint32(view, offset);
-                                                    eb_start_face_buffer_size = r.value;
-                                                    offset = r.offset;
-                                                }
-                                                {
-                                                    eb_start_face_buffer = new Uint8Array( 
-                                                        view.buffer, 
-                                                        view.byteOffset + offset, 
-                                                        eb_start_face_buffer_size 
-                                                    );                                             
-                                                    
-                                                    offset = offset + eb_start_face_buffer.length;
-                                                }
-                                            }
-
-                                            //ParseEdgebreakerTraversalStandardAttributeConnectivityData()
-                                            {
-                                                attribute_connectivity_decoders_prob_zero   = new Uint8Array(num_attribute_data);
-                                                attribute_connectivity_decoders_size        = new Uint32Array(num_attribute_data);
-                                                attribute_connectivity_decoders_buffer      = new Array(num_attribute_data);
-
-                                                for (let i = 0; i < num_attribute_data; ++i) 
-                                                {
-                                                    {
-                                                        attribute_connectivity_decoders_prob_zero[i] =
-                                                            view.getUint8(offset++);
-                                                    }
-                                                    {
-                                                        const r = readVarUint32(view, offset);
-                                                        attribute_connectivity_decoders_size[i] = r.value;
-                                                        offset = r.offset;
-                                                    }
-                                                    {
-                                                        attribute_connectivity_decoders_buffer[i] = new Uint8Array( 
-                                                            view.buffer, 
-                                                            view.byteOffset + offset, 
-                                                            attribute_connectivity_decoders_size[i] 
-                                                        );                                             
-                                                        
-                                                        offset = offset + attribute_connectivity_decoders_buffer[i].length;
-                                                    }
-                                                }
-                                            }   
-
-                                        }
-                                        break;
-
-                                        case VALENCE_EDGEBREAKER:
-                                        //EdgeBreakerTraversalValenceStart();
-                                        {
-                                            
-                                        }
-                                        break;
-
-                                        default: throw {edgebreaker_traversal_type}; break;
-                                    }
-                                }
-
-                                //DecodeEdgeBreakerConnectivity
-                                let last_vert_added = -1;
-                                {
-                                    {
-                                        Object.assign( 
-                                            is_vert_hole_, 
-                                            {
-                                                [ num_encoded_vertices + num_encoded_split_symbols ] : true
-                                            }
+                                    case decoderModule.TRIANGULAR_MESH:
+                                        decoded_draco = new decoderModule.Mesh();
+                                        decoder.DecodeArrayToMesh( bytes, bytes.length, decoded_draco );
+                                        console.log(
+                                            decoded_draco, 
+                                            decoded_draco.num_attributes(),
+                                            decoded_draco.num_faces(),
+                                            decoded_draco.num_points()
                                         );
-                                    }
-                                    
-                                    for (let i = 0; i < num_encoded_symbols; ++i) 
-                                    {
-                                        //EdgebreakerDecodeSymbol[s]
-                                        {
-                                            switch (edgebreaker_traversal_type)
-                                            {
-                                                case VALENCE_EDGEBREAKER:
-                                                    //EdgebreakerValenceDecodeSymbol
-                                                    {
-                                                        if (active_context_ !== -1) {
-                                                            const symbol_id = ebv_context_symbols[ active_context_ ][ --ebv_context_counters[ active_context_ ] ];
-                                                            last_symbol_ = edge_breaker_symbol_to_topology_id[ symbol_id ];
-                                                        } 
-                                                        else {
-                                                            last_symbol_ = TOPOLOGY_E;
-                                                        }
-                                                    }
-                                                break;
 
-                                                case STANDARD_EDGEBREAKER:
-                                                    //ParseEdgebreakerStandardSymbol
-                                                    {
-                                                        let symbol = eb_symbol_buffer.ReadBits(1);
+                                        const dmf32_array = new decoderModule.DracoInt32Array();
+                                        const face_length = decoded_draco.num_faces();
+                                        const face_values = new Float32Array( face_length * 3 );
 
-                                                        if (symbol !== TOPOLOGY_C) {
-                                                            // Else decode two additional bits.
-                                                            const symbol_suffix = eb_symbol_buffer.ReadBits(2);
-                                                            symbol |= (symbol_suffix << 1);
-                                                        }
-
-                                                        last_symbol_ = symbol;                                                            
-                                                    }
-                                                break;
-
-                                                default: throw "EdgebreakerDecodeSymbol"; break;
-                                            }
+                                        for (let i = 0; i < face_length; ++i) {
+                                            decoder.GetFaceFromMesh(decoded_draco, i, dmf32_array);
+                                            face_values.set([ 
+                                                dmf32_array.GetValue(0), 
+                                                dmf32_array.GetValue(1), 
+                                                dmf32_array.GetValue(2) 
+                                            ], i * 3);                                         
                                         }
-                                    }
+                                        
+                                        const attrs = 
+                                        {
+                                            JOINTS_0: 3,
+                                            NORMAL: 1,
+                                            POSITION: 0,
+                                            TEXCOORD_0: 2,
+                                            WEIGHTS_0: 4
+                                        };
+                                        
+                                        const points_length     = decoded_draco.num_points();
+                                        const attr_data_arrays  = new Map();
 
-                                    //ProcessInteriorEdges
+                                        Object.keys(attrs).forEach((attr) => {
+                                            const attrId = attrs[attr];
+
+                                            if (attrId < 0) {
+                                                return console.error("attrId("+attr+")", attrId);
+                                            }
+
+                                            const attribute = decoder.GetAttribute(decoded_draco, attrId);
+                                            const attributeData = new decoderModule.DracoFloat32Array();
+
+                                            decoder.GetAttributeFloatForAllPoints(
+                                                decoded_draco, attribute, attributeData
+                                            );
+
+                                            const attributeDataCount = attributeData.size();
+                                            const attributeDataArray = new Float32Array(attributeDataCount);
+                                            
+                                            for (let i = 0; i < attributeDataCount; ++i) {
+                                                attributeDataArray[i] = attributeData.GetValue(i);
+                                            }
+
+                                            attr_data_arrays.set(attr, attributeDataArray);
+
+                                            decoderModule.destroy(attributeData);
+                                        });
+
+
+                                        console.log(face_values)
+                                        console.log(decoded_draco)
+                                        console.log(attr_data_arrays)
+                                    break;
+                                        
+                                    case decoderModule.POINT_CLOUD:
+                                        decoded_draco = new decoderModule.PointCloud();
+                                        decoder.DecodeArrayToPointCloud( bytes, bytes.length, decoded_draco );
+                                    break;
                                 }
 
-                                
-                            break;
-                        }
-
-                        console.warn("draco:", 
-                            "isDRACO:", isDRACO, 
-                            "major_version:", major_version, 
-                            "minor_version:", minor_version,
-                            "encoder_type:", encoder_type,
-                            "encoder_method:", encoder_method,
-                            "flags:", flags,
-                        );
-                        
-                        console.log({
-                                    MESH_SEQUENTIAL_ENCODING: {
-                                        num_faces,
-                                        num_points,
-                                        connectivity_method,
-                                    },
-                                    MESH_EDGEBREAKER_ENCODING : {
-                                        num_faces,
-                                        edgebreaker_traversal_type,
-                                        num_encoded_vertices,
-                                        num_attribute_data,
-                                        num_encoded_symbols,
-                                        num_encoded_split_symbols,
-                                        DecodeTopologySplitEvents : {
-                                            num_topology_splits,
-                                            ParseTopologySplitEvents: {
-                                                source_id_delta,
-                                                split_id_delta,
-                                                source_edge_bit,
-                                            },
-                                            ProcessSplitData : {
-                                                source_symbol_id,
-                                                split_symbol_id
-                                            }
-                                        },
-                                        EdgebreakerTraversalStart : {
-                                            STANDARD_EDGEBREAKER : {
-                                                DecodeEdgebreakerTraversalStandardData : {
-                                                    ParseEdgebreakerTraversalStandardSymbolData : {
-                                                        eb_symbol_buffer_size,
-                                                        eb_symbol_buffer
-                                                    },
-                                                    ParseEdgebreakerTraversalStandardFaceData : {
-                                                        eb_start_face_buffer_prob_zero,
-                                                        eb_start_face_buffer_size,
-                                                        eb_start_face_buffer,
-                                                    },
-                                                    ParseEdgebreakerTraversalStandardAttributeConnectivityData : {
-                                                        attribute_connectivity_decoders_prob_zero,
-                                                        attribute_connectivity_decoders_size,
-                                                        attribute_connectivity_decoders_buffer,
-                                                    },
-                                                }
-                                            },
-                                            VALENCE_EDGEBREAKER : {
-                                                EdgeBreakerTraversalValenceStart : {
-                                                }
-                                            }
-                                        },
-                                        DecodeEdgeBreakerConnectivity : {
-                                            EdgebreakerDecodeSymbol : {},
-                                            ProcessInteriorEdges : {},
-                                        }
-                                    },
-                                })
-
-
+                                // decoderModule.destroy(decoder);
+                            });
+                            
+                        } catch (e) { console.warn('draco decode failed', e); decoded_draco = null; }
+                        // advance global offset by the chunk length
+                        offset += length;
                     }
+                    
+                    console.log(decoded_draco);
                 break;
 
                 default:
@@ -1050,10 +755,11 @@
             length
         });
 
-        const offset = readChunk();
-        readChunk(offset)
+        const offset = await readChunk();
+        await readChunk(offset)
     }
 
     readGlb();
+    
 </script>
 </html>

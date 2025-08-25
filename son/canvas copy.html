@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, height=device-height" />
+<meta name="apple-mobile-web-app-capable" content="yes" >
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<!-- onload="WebAssembly.instantiateStreaming(fetch('canvas.wasm'), self)" -->
+<body style="touch-action: manipulation; overscroll-behavior: none; pointer-events: none; margin: 0; width: 100vw; height: 100vh;">
+    <canvas width="1260" height="1990" style="width: 630px; height: 995px; position: fixed;"></canvas>
+                case CHUNK_TYPE_BIN:
+                    // Minimal, self-contained DRACO handler replacement.
+                    // When the chunk appears to be DRACO, we parse the connectivity
+                    // header minimally and return a compact `decoded_draco` object.
+                    // All helpers live inside this block as requested.
+                    const isDRACO = decode( bytes.slice(0,5) ) === "DRACO"; 
+                    let decoded_draco = null;
+
+                    if (isDRACO) {
+                        // local helpers
+                        function readVarUint32_local(view, off) {
+                            let result = 0, shift = 0, pos = off;
+                            while (true) {
+                                if (pos >= view.byteLength) throw new Error('EOF');
+                                const b = view.getUint8(pos++);
+                                result |= (b & 0x7F) << shift;
+                                if ((b & 0x80) === 0) break;
+                                shift += 7;
+                            }
+                            return { value: result >>> 0, offset: pos };
+                        }
+
+                        function readVarUint64_local(view, off) {
+                            let result = 0n, shift = 0n, pos = off;
+                            while (true) {
+                                if (pos >= view.byteLength) throw new Error('EOF');
+                                const b = BigInt(view.getUint8(pos++));
+                                result |= (b & 0x7fn) << shift;
+                                if ((b & 0x80n) === 0n) break;
+                                shift += 7n;
+                            }
+                            return { value: result, offset: pos };
+                        }
+
+                        function BitReader_local(uint8arr, byteOffset = 0, byteLength = uint8arr.length - byteOffset) {
+                            this.buf = uint8arr instanceof Uint8Array ? uint8arr : new Uint8Array(uint8arr);
+                            this.byteOffset = byteOffset; this.bytePos = 0; this.bitPos = 0; this.byteLength = byteLength;
+                        }
+                        BitReader_local.prototype.readBits = function(n) {
+                            if (n === 0) return 0; if (n < 0 || n > 32) throw new Error('nb');
+                            let out = 0;
+                            for (let i = 0; i < n; ++i) {
+                                if (this.bytePos >= this.byteLength) throw new Error('overflow');
+                                const b = this.buf[this.byteOffset + this.bytePos];
+                                const bit = (b >> (7 - this.bitPos)) & 1;
+                                out = (out << 1) | bit;
+                                this.bitPos++;
+                                if (this.bitPos === 8) { this.bitPos = 0; this.bytePos++; }
+                            }
+                            return out;
+                        };
+                        BitReader_local.prototype.resetToByte = function(){ if (this.bitPos !== 0) { this.bitPos = 0; this.bytePos++; } };
+
+                        // Begin parsing from bytes buffer. Use DataView on the chunk's bytes.
+                        const chunkView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                        let off = 5; // skip 'DRACO' magic already detected
+
+                        try {
+                            const traversalType = chunkView.getUint8(off); off += 1;
+                            const r1 = readVarUint32_local(chunkView, off); const numEncodedVertices = r1.value; off = r1.offset;
+                            const r2 = readVarUint32_local(chunkView, off); const numFaces = r2.value; off = r2.offset;
+                            const numAttributeData = chunkView.getUint8(off); off += 1;
+                            const r3 = readVarUint32_local(chunkView, off); const numEncodedSymbols = r3.value; off = r3.offset;
+                            const r4 = readVarUint32_local(chunkView, off); const numEncodedSplitSymbols = r4.value; off = r4.offset;
+
+                            // Read topology splits
+                            const r5 = readVarUint32_local(chunkView, off); const numTopologySplits = r5.value; off = r5.offset;
+                            const sourceIdDelta = new Uint32Array(numTopologySplits);
+                            const splitIdDelta = new Uint32Array(numTopologySplits);
+                            for (let i = 0; i < numTopologySplits; ++i) {
+                                const a = readVarUint32_local(chunkView, off); sourceIdDelta[i] = a.value; off = a.offset;
+                                const b = readVarUint32_local(chunkView, off); splitIdDelta[i] = b.value; off = b.offset;
+                            }
+                            const splitBytes = Math.ceil(numTopologySplits/8);
+                            const availableSplitBytes = Math.max(0, Math.min(splitBytes, bytes.byteLength - off));
+                            const splitArr = new Uint8Array(bytes.buffer, bytes.byteOffset + off, availableSplitBytes);
+                            off += availableSplitBytes;
+                            const splitReader = new BitReader_local(splitArr, 0, availableSplitBytes);
+                            const sourceEdgeBit = new Uint8Array(numTopologySplits);
+                            for (let i = 0; i < numTopologySplits; ++i) sourceEdgeBit[i] = splitReader.readBits(1);
+                            splitReader.resetToByte();
+
+                            // Read symbol buffer size and symbol buffer (varuint64)
+                            const r6 = readVarUint64_local(chunkView, off); let symbolBufSize = Number(r6.value); off = r6.offset;
+                            const availableSymBytes = Math.max(0, Math.min(symbolBufSize, bytes.byteLength - off));
+                            const symbolBuf = new Uint8Array(bytes.buffer, bytes.byteOffset + off, availableSymBytes); off += availableSymBytes;
+
+                            // Read start-face buffer
+                            const startProbZero = chunkView.getUint8(off); off += 1;
+                            const r7 = readVarUint32_local(chunkView, off); const startFaceBufSize = r7.value; off = r7.offset;
+                            const availableStartBytes = Math.max(0, Math.min(startFaceBufSize, bytes.byteLength - off));
+                            const startFaceBuf = new Uint8Array(bytes.buffer, bytes.byteOffset + off, availableStartBytes); off += availableStartBytes;
+
+                            // Minimal interpretation (no entropy decode): present raw buffers and counts.
+                            decoded_draco = {
+                                traversalType,
+                                numEncodedVertices,
+                                numFaces,
+                                numAttributeData,
+                                numEncodedSymbols,
+                                numEncodedSplitSymbols,
+                                numTopologySplits,
+                                sourceIdDelta: Array.from(sourceIdDelta),
+                                splitIdDelta: Array.from(splitIdDelta),
+                                sourceEdgeBit: Array.from(sourceEdgeBit),
+                                symbolBuffer: symbolBuf,
+                                startFaceBuffer: startFaceBuf,
+                                offsetAfterParsing: off
+                            };
+                        } catch (err) {
+                            console.error('draco parse error', err);
+                            decoded_draco = { error: String(err) };
+                        }
+                    }
+                                    n = ftv[1][face];
+                                    p = ftv[2][face];
+                                } 
+                                else 
+                                if (local === 1) 
+                                {
+                                    v = ftv[1][face];
+                                    n = ftv[2][face];
+                                    p = ftv[0][face];
+                                } 
+                                else 
+                                if (local === 2) 
+                                {
+                                    v = ftv[2][face];
+                                    n = ftv[0][face];
+                                    p = ftv[1][face];
+                                }
+                            }
+
+                            function CornerToVerts(att_dec, corner_id) 
+                            {
+                                if (att_dec === 0) 
+                                {
+                                    CornerToVertsInternal(face_to_vertex, corner_id, v, n, p);
+                                } 
+                                else 
+                                {
+                                    if (att_dec_decoder_type[att_dec] === MESH_VERTEX_ATTRIBUTE) 
+                                    {
+                                        CornerToVertsInternal(face_to_vertex, corner_id, v, n, p);
+                                    } 
+                                    else 
+                                    {
+                                        CornerToVertsInternal(attr_face_to_vertex[att_dec - 1], corner_id, v, n, p);
+                                    }
+                                }
+                            }
+
+                            CornerToVerts(att_dec, corner_id);
+
+                            return v;
+                        }
+
+                        function SetOppositeCorners(c, opp_c) 
+                        {
+                            opposite_corners_[ c ] = opp_c;
+                            opposite_corners_[ opp_c ] = c;
+                        }
+
+                        function MapCornerToVertex(corner_id, vert_id) 
+                        {
+                            corner_to_vertex_map_[0][ corner_id ] = vert_id;
+
+                            if (vert_id >= 0) {
+                                vertex_corners_[ vert_id ] = corner_id;
+                            }
+                        }
+
+                        function UpdateVertexToCornerMap(vert) 
+                        {
+                            first_c = vertex_corners_[vert];
+                            
+                            if (first_c < 0) {
+                                return;
+                            }
+
+                            c       = first_c;
+                            act_c   = SwingLeft(0, first_c);
+                            
+                            let __UpdateVertexToCornerMap__ = 1e6;
+                            while ((act_c >= 0) && (act_c !== first_c)) 
+                            {
+                                c       = act_c;
+                                act_c   = SwingLeft(0, act_c);
+
+                                if (!__UpdateVertexToCornerMap__--) {
+                                    throw "loop:UpdateVertexToCornerMap!";
+                                }
+                            }
+
+                            if (act_c !== first_c) 
+                            {
+                                vertex_corners_[ vert ] = c;
+                            }
+                        }
+
+                        function ReplaceVerts(from, to) {
+                            for (let i = 0; i < face_to_vertex[0].size(); ++i) {
+                                if (face_to_vertex[0][i] == from) {
+                                    face_to_vertex[0][i] = to;
+                                }
+                                if (face_to_vertex[1][i] == from) {
+                                    face_to_vertex[1][i] = to;
+                                }
+                                if (face_to_vertex[2][i] == from) {
+                                    face_to_vertex[2][i] = to;
+                                }
+                            }
+                        }
+
+
+                        function UpdateCornersAfterMerge(c, v) {
+                            const opp_corner = PosOpposite(c);
+                            if (opp_corner >= 0) {
+                                let corner_n = Next(opp_corner);
+                                
+                                let __UpdateCornersAfterMerge__ = 1e6;
+                                while (corner_n >= 0) {
+
+                                    MapCornerToVertex(corner_n, v);
+                                    corner_n = SwingLeft(0, corner_n);
+
+                                    if (!__UpdateCornersAfterMerge__--) {
+                                        throw "UpdateCornersAfterMerge!";
+                                        //burada patlıyor. 1 milyon döngü ve devam ediyor
+                                        //sürekli 271 - 273...
+                                    }
+                                }
+                            }
+                        }
+
+                        function Dot(vec_x, vec_y, dot) {
+                            dot = 0;
+
+                            for (let i = 0; i < vec_x.size(); ++i) {
+                                dot += vec_x[ i ] * vec_y[ i ];
+                            }
+
+                            return dot;
+                        }
+
+                        function AbsSum(vec, abs_sum) {
+                            result = 0;
+                            
+                            for (let i = 0; i < vec.size(); ++i) {
+                                result += Abs(vec[i]);
+                            }
+
+                            return abs_sum = result;
+                        }
+
+                        function MultiplyScalar(vec, value, out) {
+                            for (let i = 0; i < vec.size(); ++i) {
+                                out.push_back(vec[i] * value);
+                            }
+                        }
+
+                        function DivideScalar(vec, value, out) {
+                            for (i = 0; i < vec.size(); ++i) {
+                                out.push_back(vec[i] / value);
+                            }
+                        }
+
+                        function AddVectors(a, b, c) {
+                            for (i = 0; i < a.size(); ++i) {
+                                c.push_back(a[i] + b[i]);
+                            }
+                        }
+
+                        function SubtractVectors(a, b, c) {
+                            for (i = 0; i < a.size(); ++i) {
+                               c.push_back(a[i] - b[i]);
+                            }
+                        }
+
+                        function CrossProduct(u, v, r) {
+                            r[0] = (u[1] * v[2]) - (u[2] * v[1]);
+                            r[1] = (u[2] * v[0]) - (u[0] * v[2]);
+                            r[2] = (u[0] * v[1]) - (u[1] * v[0]);
+                        }
+
+                        // BitReader: reads bits MSB-first within bytes as Draco spec requires.
+                        function BitReader(uint8arr) {
+                            this.buf = uint8arr;
+                            this.bytePos = 0; // index into buf
+                            this.bitPos = 0;  // 0..7 - next bit index within current byte (0 => MSB)
+                        }
+
+                        BitReader.prototype._ensureAvailable = function(bits) {
+                            const available = ((this.buf.length - this.bytePos) * 8) - this.bitPos;
+                            if (bits > available) throw new Error('BitReader: not enough bits available');
+                        };
+
+                        // Read next n bits (n <= 32). Bits are read from high to low within bytes.
+                        BitReader.prototype.ReadBits = function(n) {
+                            if (!n) return 0;
+                            if (n < 0) throw new Error('ReadBits: negative count');
+                            if (n > 32) throw new Error('ReadBits: max 32 bits supported');
+                            this._ensureAvailable(n);
+                            let out = 0 >>> 0;
+                            for (let i = 0; i < n; ++i) {
+                                const curByte = this.buf[this.bytePos];
+                                const bitIndex = 7 - this.bitPos; // MSB first
+                                const bit = (curByte >> bitIndex) & 1;
+                                out = (out << 1) | bit;
+                                this.bitPos++;
+                                if (this.bitPos === 8) {
+                                    this.bitPos = 0;
+                                    this.bytePos++;
+                                }
+                            }
+                            return out >>> 0;
+                        };
+
+                        // Align to next byte boundary. Matches ResetBitReader() behaviour in spec.
+                        BitReader.prototype.ResetBitReader = function() {
+                            if (this.bitPos !== 0) {
+                                this.bitPos = 0;
+                                this.bytePos++;
+                            }
+                        };
+
+                        Array.prototype.back = function (value) {
+                            if (typeof value !== "undefined") {
+                                this.push(value);
+                            }
+                            return this[ this.length-1 ];
+                        }
+
+                        Array.prototype.assign = function (length, value) {
+                            this[length] = 0;
+                            this.splice(length, this.length-length-1);
+                            this.fill(value);
+
+                            return this;
+                        }
+
+                        Array.prototype.empty = function () {
+                            return this.size() === 0;
+                        }
+
+                        Array.prototype.pop_back = function () {
+                            return this.splice( this.length-1, 1 ).at(0);
+                        }
+
+                        Array.prototype.push_back = function (value) {
+                            return this[this.length] = value;
+                        }
+
+                        Array.prototype.size = function () {
+                            return this.filter(c => typeof c !== "undefined").length;
+                        }
+
+
+                        const major_version  = view.getUint8(offset++);
+                        const minor_version  = view.getUint8(offset++);
+
+                        const encoder_type   = view.getUint8(offset++);
+                        const encoder_method = view.getUint8(offset++);
+                        const flags          = view.getUint16(offset, true); offset += 2
+
+                        if (flags & METADATA_FLAG_MASK) {
+                            //DecodeMetadata
+                            console.error("decode metaheader!!!")
+                        }
+
+
+
+                        
+                        //DecodeConnectivityData
+                        switch (encoder_method) 
+                        {    
+                            case MESH_SEQUENTIAL_ENCODING:
+                                {
+                                    const r1 = readVarUint32(view, offset);
+                                    num_faces = r1.value;
+                                    offset = r1.offset;
+                                }
+                                {
+                                    const r2 = readVarUint32(view, offset);
+                                    num_points = r2.value;
+                                    offset = r2.offset;
+                                }
+                                {
+                                    connectivity_method =
+                                        view.getUint8(offset++); // UI8                                
+                                }
+                            break;
+                                
+                            case MESH_EDGEBREAKER_ENCODING:
+                                let curr_att_dec    = 0;
+                                let curr_att        = 0;
+                                //ParseEdgebreakerConnectivityData();
+                                {
+                                    edgebreaker_traversal_type = 
+                                        view.getUint8(offset++); //UI8
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_encoded_vertices = r.value;
+                                    offset = r.offset;
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_faces = r.value;
+                                    offset = r.offset;
+                                }
+                                {
+                                    num_attribute_data = 
+                                        view.getUint8(offset++); //UI8
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_encoded_symbols = r.value;
+                                    offset = r.offset;
+                                }
+                                {
+                                    const r = readVarUint32(view, offset);
+                                    num_encoded_split_symbols = r.value;
+                                    offset = r.offset;
+                                }
+
+
+                                //DecodeTopologySplitEvents()
+                                {
+                                    //ParseTopologySplitEvents
+                                    {
+                                        {
+                                            const r = readVarUint32(view, offset);
+                                            num_topology_splits = r.value;
+                                            offset = r.offset;
+                                        }
+                                        {
+                                            source_id_delta   = new Array(num_topology_splits);
+                                            split_id_delta    = new Array(num_topology_splits);
+                                            source_edge_bit   = new Array(num_topology_splits);
+            
+                                            for (let i = 0; i < num_topology_splits; ++i) 
+                                            {
+                                                {
+                                                    const r = readVarUint32(view, offset);
+                                                    source_id_delta[i] = r.value;
+                                                    offset = r.offset;
+                                                }
+                                                {
+                                                    const r = readVarUint32(view, offset);
+                                                    split_id_delta[i] = r.value;
+                                                    offset = r.offset;
+                                                }                                                               
+                                            }
+        
+                                            let max_bit_offset = Math.ceil(num_topology_splits / 8);
+                                            // Read the bytes into a Uint8Array, wrap into BitReader
+                                            const bitBytes = new Uint8Array(view.buffer, view.byteOffset + offset, max_bit_offset);
+                                            offset += max_bit_offset;
+                                            const bitReader = new BitReader(bitBytes);
+                                            for (let i = 0; i < num_topology_splits; ++i) {
+                                                // f[1] - single bit per split
+                                                source_edge_bit[i] = bitReader.ReadBits(1);
+                                            }
+                                            // Align to next byte boundary as spec indicates.
+                                            bitReader.ResetBitReader();
+                                        }
+                                    }
+                                    //ProcessSplitData
+                                    {
+                                        source_symbol_id = new Array(source_id_delta.length).fill(0);
+                                        split_symbol_id = new Array(source_id_delta.length).fill(0);
+
+                                        let last_id = 0;
+                                        for (let i = 0; i < source_id_delta.length; ++i) {
+                                            source_symbol_id[i] = source_id_delta[i] + last_id;
+                                            split_symbol_id[i] = source_symbol_id[i] - split_id_delta[i];
+                                            last_id = source_symbol_id[i];
+                                        }
+                                    }
+                                }
+
+                                //EdgebreakerTraversalStart
+                                let last_symbol_ = -1;
+                                let active_context_ = -1;
+                                {
+                                    switch (edgebreaker_traversal_type)
+                                    {
+                                        case STANDARD_EDGEBREAKER:
+                                        //DecodeEdgebreakerTraversalStandardData();
+                                        {
+                                            //ParseEdgebreakerTraversalStandardSymbolData()
+                                            {
+                                                {
+                                                    const r = readVarUint64(view, offset);
+                                                    eb_symbol_buffer_size = Number(r.value);
+                                                    offset = r.offset;
+                                                }
+                                                {
+                                                    eb_symbol_buffer = new Uint8Array( 
+                                                        view.buffer, 
+                                                        view.byteOffset + offset, 
+                                                        eb_symbol_buffer_size 
+                                                    );
+                                                        // Wrap into BitReader for bit-level access
+                                                        eb_symbol_buffer = new BitReader(new Uint8Array(
+                                                            view.buffer,
+                                                            view.byteOffset + offset,
+                                                            eb_symbol_buffer_size
+                                                        ));
+                                                        offset = offset + eb_symbol_buffer_size;
+                                                }
+                                            }
+
+                                            //ParseEdgebreakerTraversalStandardFaceData()
+                                            {
+                                                {
+                                                    eb_start_face_buffer_prob_zero =
+                                                        view.getUint8(offset++);
+                                                }
+                                                {
+                                                    const r = readVarUint32(view, offset);
+                                                    eb_start_face_buffer_size = r.value;
+                                                    offset = r.offset;
+                                                }
+                                                {
+                                                    eb_start_face_buffer = new Uint8Array( 
+                                                        view.buffer, 
+                                                        view.byteOffset + offset, 
+                                                        eb_start_face_buffer_size 
+                                                    );                                             
+                                                    // Face buffer also needs bit access for RABS/face config reading.
+                                                    eb_start_face_buffer = new BitReader(new Uint8Array(
+                                                        view.buffer,
+                                                        view.byteOffset + offset,
+                                                        eb_start_face_buffer_size
+                                                    ));
+                                                    offset = offset + eb_start_face_buffer_size;
+                                                }
+                                            }
+
+                                            //ParseEdgebreakerTraversalStandardAttributeConnectivityData()
+                                            {
+                                                attribute_connectivity_decoders_prob_zero   = new Uint8Array(num_attribute_data);
+                                                attribute_connectivity_decoders_size        = new Uint32Array(num_attribute_data);
+                                                attribute_connectivity_decoders_buffer      = new Array(num_attribute_data);
+
+                                                for (let i = 0; i < num_attribute_data; ++i) 
+                                                {
+                                                    {
+                                                        attribute_connectivity_decoders_prob_zero[i] =
+                                                            view.getUint8(offset++);
+                                                    }
+                                                    {
+                                                        const r = readVarUint32(view, offset);
+                                                        attribute_connectivity_decoders_size[i] = r.value;
+                                                        offset = r.offset;
+                                                    }
+                                                    {
+                                                        attribute_connectivity_decoders_buffer[i] = new Uint8Array( 
+                                                            view.buffer, 
+                                                            view.byteOffset + offset, 
+                                                            attribute_connectivity_decoders_size[i] 
+                                                        );                                             
+                                                        
+                                                        offset = offset + attribute_connectivity_decoders_buffer[i].length;
+                                                    }
+                                                }
+                                            }   
+
+                                        }
+                                        break;
+
+                                        case VALENCE_EDGEBREAKER:
+                                        //EdgeBreakerTraversalValenceStart();
+                                        {
+                                            
+                                        }
+                                        break;
+
+                                        default: throw {edgebreaker_traversal_type}; break;
+                                    }
+                                }
+
+                                //DecodeEdgeBreakerConnectivity
+                                let last_vert_added = -1;
+                                {
+                                    {
+                                        console.error(num_encoded_vertices + num_encoded_split_symbols)
+                                        is_vert_hole_.assign( num_encoded_vertices + num_encoded_split_symbols, true );
+                                    }
+                                    
+                                    for (let i = 0; i < num_encoded_symbols; ++i) 
+                                    {
+                                        //EdgebreakerDecodeSymbol[s]
+                                        {
+                                            switch (edgebreaker_traversal_type)
+                                            {
+                                                case VALENCE_EDGEBREAKER:
+                                                    //EdgebreakerValenceDecodeSymbol
+                                                    {
+                                                        if (active_context_ !== -1) {
+                                                            const sym_id = ebv_context_symbols[ active_context_ ][ --ebv_context_counters[ active_context_ ] ];
+                                                            last_symbol_ = edge_breaker_symbol_to_topology_id[ sym_id ];
+                                                        } 
+                                                        else {
+                                                            last_symbol_ = TOPOLOGY_E;
+                                                        }
+                                                    }
+                                                break;
+
+                                                case STANDARD_EDGEBREAKER:
+                                                    //ParseEdgebreakerStandardSymbol
+                                                    {
+                                                        let symbol = eb_symbol_buffer.ReadBits(1);
+
+                                                        if (symbol !== TOPOLOGY_C) {
+                                                            // Else decode two additional bits.
+                                                            const symbol_suffix = eb_symbol_buffer.ReadBits(2);
+                                                            symbol |= (symbol_suffix << 1);
+                                                        }
+
+                                                        last_symbol_ = symbol;   
+                                                    }
+                                                break;
+
+                                                default: throw "EdgebreakerDecodeSymbol"; break;
+                                            }
+                                        }
+
+                                        {
+                                            corner = 3 * i;
+
+                                            let new_corner  = corner;
+                                            let symbol_id   = i, 
+                                                encoder_symbol_id,
+                                                act_top_corner;
+                                            
+                                            let corner_a, corner_b, next, prev, vert, b_opp, 
+                                                corner_n, vertex_n, opp_corner
+                                            ;
+
+                                            console.log( "NewActiveCornerReached corner:", corner, "i:", i)
+                                            
+                                            //NewActiveCornerReached(corner, i);
+                                            let check_topology_split = false;
+                                            {
+                                                switch (last_symbol_) 
+                                                {
+                                                    case TOPOLOGY_C:
+                                                    console.log( "TOPOLOGY_C" )
+                                                    {
+                                                        console.log( "TOPOLOGY_C active_corner_stack:", active_corner_stack.slice() )
+                                                        {
+                                                            corner_a = active_corner_stack.back();
+                                                            console.log( "TOPOLOGY_C corner_a:", corner_a )
+
+                                                            corner_b = Previous(corner_a);
+                                                            console.log( "TOPOLOGY_C corner_b:", corner_b )
+                                                            
+                                                            let __PosOpposite__ = 1e6;
+                                                            
+                                                            while (1) {
+                                                                b_opp = PosOpposite(corner_b);
+                                                                
+                                                                if (b_opp === -1) {
+                                                                    break;
+                                                                }
+
+                                                                corner_b = Previous(b_opp);
+
+                                                                if (!--__PosOpposite__) { throw "loop:PosOpposite!" }
+                                                            }
+                                                            
+                                                            console.log( `TOPOLOGY_C SetOppositeCorners(corner_a{${corner_a}} , new_corner{${new_corner}} + 1);` )
+                                                            SetOppositeCorners(corner_a, new_corner + 1);
+
+                                                            console.log( `TOPOLOGY_C SetOppositeCorners(corner_b{${corner_b}} , new_corner{${new_corner}} + 2);` )
+                                                            SetOppositeCorners(corner_b, new_corner + 2);
+                                                            
+                                                            console.log( `TOPOLOGY_C active_corner_stack.back( new_corner{${new_corner}} );` )
+                                                            active_corner_stack.back( new_corner );
+
+                                                            console.log( "TOPOLOGY_C active_corner_stack:", active_corner_stack.slice() )
+                                                        }
+
+                                                        vert = CornerToVert(curr_att_dec, Next(corner_a));
+                                                        next = CornerToVert(curr_att_dec, Next(corner_b));
+                                                        prev = CornerToVert(curr_att_dec, Previous(corner_a));
+
+                                                        console.warn("vert:", vert, "next:", next, "prev:", prev, "curr_att_dec:", curr_att_dec, "corner_a:", corner_a);
+                                                        
+                                                        if (edgebreaker_traversal_type === VALENCE_EDGEBREAKER) {
+                                                            vertex_valences_[next] += 1;
+                                                            vertex_valences_[prev] += 1;
+                                                        }
+
+                                                        face_to_vertex[0].push_back(vert);
+                                                        face_to_vertex[1].push_back(next);
+                                                        face_to_vertex[2].push_back(prev);
+                                                        
+                                                        is_vert_hole_[ vert ] = false;
+                                                        
+                                                        MapCornerToVertex(new_corner, vert);
+                                                        MapCornerToVertex(new_corner + 1, next);
+                                                        MapCornerToVertex(new_corner + 2, prev);                                                    
+                                                    }
+                                                    break;
+
+                                                    case TOPOLOGY_S:
+                                                    console.log( "TOPOLOGY_S" )
+                                                    {
+                                                        {
+                                                            corner_b = active_corner_stack.pop_back();
+                                                            
+                                                            for (let j = 0; j < topology_split_id.size(); ++j) 
+                                                            {
+                                                                if (topology_split_id[i] === symbol_id) {
+                                                                    active_corner_stack.push_back(split_active_corners[j]);
+                                                                }
+                                                            }
+
+                                                            corner_a = active_corner_stack.back();
+                                                            
+                                                            SetOppositeCorners(corner_a, new_corner + 2);
+                                                            SetOppositeCorners(corner_b, new_corner + 1);
+                                                            
+                                                            active_corner_stack.back( new_corner );
+                                                        }
+
+                                                        vert = CornerToVert(curr_att_dec, Previous(corner_a));
+                                                        next = CornerToVert(curr_att_dec, Next(corner_a));
+                                                        prev = CornerToVert(curr_att_dec, Previous(corner_b));
+
+                                                        MapCornerToVertex(new_corner, vert);
+                                                        MapCornerToVertex(new_corner + 1, next);
+                                                        MapCornerToVertex(new_corner + 2, prev);
+                                                        
+                                                        corner_n = Next(corner_b);
+                                                        vertex_n = CornerToVert(curr_att_dec, corner_n);
+                                                        
+                                                        if (edgebreaker_traversal_type === VALENCE_EDGEBREAKER) {
+                                                            vertex_valences_[vert] += vertex_valences_[vertex_n];
+                                                        }
+
+                                                        ReplaceVerts(vertex_n, vert);
+                                                        
+                                                        if (edgebreaker_traversal_type === VALENCE_EDGEBREAKER) {
+                                                            vertex_valences_[ next ] += 1;
+                                                            vertex_valences_[ prev ] += 1;
+                                                        }
+
+                                                        face_to_vertex[0].push_back(vert);
+                                                        face_to_vertex[1].push_back(next);
+                                                        face_to_vertex[2].push_back(prev);
+                                                        
+                                                        UpdateCornersAfterMerge(new_corner + 1, vert);
+                                                        
+                                                        vertex_corners_[ vertex_n ] = kInvalidCornerIndex;                                                        
+                                                    }
+                                                    break;
+
+                                                    case TOPOLOGY_R:
+                                                    console.log( "TOPOLOGY_R" )
+
+                                                    {
+                                                        {
+                                                            corner_a = active_corner_stack.back();
+                                                            opp_corner = new_corner + 2;
+                                                            
+                                                            SetOppositeCorners(opp_corner, corner_a);
+                                                            active_corner_stack.back( new_corner );
+                                                        }
+
+                                                        check_topology_split = true;
+
+                                                        vert = CornerToVert(curr_att_dec, Previous(corner_a));
+                                                        next = CornerToVert(curr_att_dec, Next(corner_a));
+                                                        prev = ++last_vert_added;
+
+                                                        if (edgebreaker_traversal_type === VALENCE_EDGEBREAKER) {
+                                                            vertex_valences_[ vert ] += 1;
+                                                            vertex_valences_[ next ] += 1;
+                                                            vertex_valences_[ prev ] += 2;
+                                                        }
+
+                                                        face_to_vertex[0].push_back(vert);
+                                                        face_to_vertex[1].push_back(next);
+                                                        face_to_vertex[2].push_back(prev);
+
+                                                        MapCornerToVertex(new_corner + 2, prev);
+                                                        MapCornerToVertex(new_corner, vert);
+                                                        MapCornerToVertex(new_corner + 1, next);                                                        
+                                                    }
+                                                    break;
+                                                    
+                                                    case TOPOLOGY_L:
+                                                    console.log( "TOPOLOGY_L" )
+
+                                                    {
+                                                        {
+                                                            corner_a = active_corner_stack.back();
+                                                            opp_corner = new_corner + 1;
+                                                            SetOppositeCorners(opp_corner, corner_a);
+                                                            active_corner_stack.back( new_corner );
+                                                        }
+
+                                                        check_topology_split = true;
+                                                        
+                                                        vert = CornerToVert(curr_att_dec, Next(corner_a));
+                                                        next = ++last_vert_added;
+                                                        prev = CornerToVert(curr_att_dec, Previous(corner_a));
+                                                        
+                                                        if (edgebreaker_traversal_type === VALENCE_EDGEBREAKER) {
+                                                            vertex_valences_[vert] += 1;
+                                                            vertex_valences_[next] += 2;
+                                                            vertex_valences_[prev] += 1;
+                                                        }
+
+                                                        face_to_vertex[0].push_back(vert);
+                                                        face_to_vertex[1].push_back(next);
+                                                        face_to_vertex[2].push_back(prev);
+
+                                                        MapCornerToVertex(new_corner + 2, prev);
+                                                        MapCornerToVertex(new_corner, vert);
+                                                        MapCornerToVertex(new_corner + 1, next);
+                                                    }                                                        
+                                                    break;
+                                                    
+                                                    case TOPOLOGY_E:
+                                                    console.log( "TOPOLOGY_E" )
+
+                                                    {
+                                                        active_corner_stack.push_back(new_corner);
+                                                        check_topology_split = true;
+                                                        
+                                                        vert = last_vert_added + 1;
+                                                        next = vert + 1;
+                                                        prev = next + 1;
+                                                        
+                                                        if (edgebreaker_traversal_type === VALENCE_EDGEBREAKER) {
+                                                            vertex_valences_[ vert ] += 2;
+                                                            vertex_valences_[ next ] += 2;
+                                                            vertex_valences_[ prev ] += 2;
+                                                        }
+
+                                                        face_to_vertex[0].push_back(vert);
+                                                        face_to_vertex[1].push_back(next);
+                                                        face_to_vertex[2].push_back(prev);
+                                                        last_vert_added = prev;
+                                                        
+                                                        MapCornerToVertex(new_corner, vert);
+                                                        MapCornerToVertex(new_corner + 1, next);
+                                                        MapCornerToVertex(new_corner + 2, prev);
+                                                    }
+                                                    break;
+                                                    
+                                                    default: throw "TOPOLOGY_NA"; break;
+                                                }
+
+                                                if (edgebreaker_traversal_type === VALENCE_EDGEBREAKER) 
+                                                {
+                                                    console.log( "edgebreaker_traversal_type === VALENCE_EDGEBREAKER" )
+
+                                                    // Compute the new context that is going to be used
+                                                    // to decode the next symbol.
+                                                    let clamped_valence, 
+                                                        active_valence = vertex_valences_[ next ];
+                                                    
+                                                    if ( active_valence < MIN_VALENCE ) {
+                                                        clamped_valence = MIN_VALENCE;
+                                                    } 
+                                                    else 
+                                                    if ( active_valence > MAX_VALENCE ) {
+                                                        clamped_valence = MAX_VALENCE;
+                                                    } 
+                                                    else {
+                                                        clamped_valence = active_valence;
+                                                    }
+
+                                                    active_context_ = (clamped_valence - MIN_VALENCE);
+                                                }
+
+                                                if (check_topology_split) 
+                                                {
+                                                    console.log( "check_topology_split === 1" )
+
+                                                    encoder_symbol_id = num_encoded_symbols - symbol_id - 1;
+                                                    
+                                                    let isTopologySplit, 
+                                                        new_active_corner, 
+                                                        dec_split_id, 
+                                                        split_edge, 
+                                                        enc_split_id
+                                                    ;
+                                                    
+                                                    let __IsTopologySplit__ = 1e6;
+                                                    while (isTopologySplit = IsTopologySplit(encoder_symbol_id))
+                                                    {
+                                                        [ split_edge, enc_split_id ]    = isTopologySplit;
+                                                        act_top_corner                  = active_corner_stack.back();
+                                                        
+                                                        if (split_edge === RIGHT_FACE_EDGE) 
+                                                        {
+                                                            new_active_corner = Next(act_top_corner);
+                                                        }    
+                                                        else
+                                                        {
+                                                            new_active_corner = Previous(act_top_corner);
+                                                        }
+
+                                                        // Convert the encoder split symbol id to decoder symbol id.
+                                                        dec_split_id = num_encoded_symbols - enc_split_id - 1;
+
+                                                        topology_split_id.push_back( dec_split_id );
+                                                        split_active_corners.push_back( new_active_corner );
+
+                                                        if (!--__IsTopologySplit__) { throw "loop:IsTopologySplit!" }
+                                                    }
+                                                }
+                                            }
+
+                                        }
+
+
+
+                                    }
+
+                                    //ProcessInteriorEdges
+                                }
+                                
+                            break;
+                        }
+
+                        console.warn("draco:", 
+                            "isDRACO:", isDRACO, 
+                            "major_version:", major_version, 
+                            "minor_version:", minor_version,
+                            "encoder_type:", encoder_type,
+                            "encoder_method:", encoder_method,
+                            "flags:", flags,
+                        );
+                        
+                        console.log({
+                            MESH_SEQUENTIAL_ENCODING: {
+                                num_faces,
+                                num_points,
+                                connectivity_method,
+                            },
+                            MESH_EDGEBREAKER_ENCODING : {
+                                num_faces,
+                                edgebreaker_traversal_type,
+                                num_encoded_vertices,
+                                num_attribute_data,
+                                num_encoded_symbols,
+                                num_encoded_split_symbols,
+                                DecodeTopologySplitEvents : {
+                                    num_topology_splits,
+                                    ParseTopologySplitEvents: {
+                                        source_id_delta,
+                                        split_id_delta,
+                                        source_edge_bit,
+                                    },
+                                    ProcessSplitData : {
+                                        source_symbol_id,
+                                        split_symbol_id
+                                    }
+                                },
+                                EdgebreakerTraversalStart : {
+                                    STANDARD_EDGEBREAKER : {
+                                        DecodeEdgebreakerTraversalStandardData : {
+                                            ParseEdgebreakerTraversalStandardSymbolData : {
+                                                eb_symbol_buffer_size,
+                                                eb_symbol_buffer
+                                            },
+                                            ParseEdgebreakerTraversalStandardFaceData : {
+                                                eb_start_face_buffer_prob_zero,
+                                                eb_start_face_buffer_size,
+                                                eb_start_face_buffer,
+                                            },
+                                            ParseEdgebreakerTraversalStandardAttributeConnectivityData : {
+                                                attribute_connectivity_decoders_prob_zero,
+                                                attribute_connectivity_decoders_size,
+                                                attribute_connectivity_decoders_buffer,
+                                            },
+                                        }
+                                    },
+                                    VALENCE_EDGEBREAKER : {
+                                        EdgeBreakerTraversalValenceStart : {
+                                        }
+                                    }
+                                },
+                                DecodeEdgeBreakerConnectivity : {
+                                    EdgebreakerDecodeSymbol : {
+                                        active_corner_stack
+                                    },
+                                    ProcessInteriorEdges : {},
+                                }
+                            },
+                        });
+                    }
+                break;
+
+                default:
+                    console.error("undefined type:", type, bytes)
+                break;
+            }
+
+            return offset;
+        }
+
+        console.log({
+            magic: "0x" + magic.toString(16),
+            version,
+            length
+        });
+
+        const offset = readChunk();
+        readChunk(offset)
+    }
+
+    readGlb();
+</script>
+</html>
