@@ -170,7 +170,7 @@
     const adapter   = await navigator.gpu.requestAdapter();
     const device    = await adapter.requestDevice();
     const canvas    = document.querySelector("canvas");
-    const context   = canvas.getContext("webgpu");
+    const context   = canvas.getContext("webgl2");
     const buffer    = await new Promise(done => indexedDB.open("tmp").onsuccess = e => e.target.result.transaction("uploads").objectStore("uploads").get(filename).onsuccess = s => s.target.result.arrayBuffer().then(done));
 
     function readStl() {
@@ -812,11 +812,7 @@
     
     // GLTF ile DRACO verisini ilişkilendir ve çiz
     function renderGltf(gltf) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 800; canvas.height = 600;
-        document.body.appendChild(canvas);
-        
-        const gl = canvas.getContext('webgl');
+        const gl = context;
         
         // Basit vertex shader
         const vsSource = `
@@ -880,14 +876,13 @@
                             1, 0, 0, 0,
                             0, 1, 0, 0,
                             0, 0, 1, 0,
-                            0, 0, -5, 1
+                            0, -.5, 0, 1
                         ]);
                         
                         const matrixLocation = gl.getUniformLocation(program, 'uMatrix');
                         gl.uniformMatrix4fv(matrixLocation, false, matrix);
                         
                         // Çiz
-                        gl.enable(gl.DEPTH_TEST);
                         gl.clearColor(0.1, 0.1, 0.1, 1.0);
                         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
                         gl.drawElements(gl.TRIANGLES, dracoData.faces.length * 3, gl.UNSIGNED_INT, 0);
