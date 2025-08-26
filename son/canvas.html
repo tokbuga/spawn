@@ -166,11 +166,11 @@
 
     await new Promise(d => setTimeout(d, 100));
 
-    const filename  = "npc_d.glb";// || "1.3_OLED_IIC_128x64.STL" || "CaseV1.STL";
+    const filename  = "npc_d.glb" || "e003983a-47db-42a3-9647-aaf39f7e4927.glb";// || "1.3_OLED_IIC_128x64.STL" || "CaseV1.STL";
     const adapter   = await navigator.gpu.requestAdapter();
     const device    = await adapter.requestDevice();
     const canvas    = document.querySelector("canvas");
-    const context   = canvas.getContext("webgpu");
+    const context   = canvas.getContext("webgl2");
     const buffer    = await new Promise(done => indexedDB.open("tmp").onsuccess = e => e.target.result.transaction("uploads").objectStore("uploads").get(filename).onsuccess = s => s.target.result.arrayBuffer().then(done));
 
     function readStl() {
@@ -647,12 +647,14 @@
             const chunkData = new Uint8Array( 
                 source, offset, Math.min(chunkLength, length || chunkLength) 
             );
+            console.log({offset, length, chunkType}, headers, new Uint8Array(source, offset-8).slice())
             
             switch ( chunkType ) {
                 case CHUNK_TYPE_JSON:
-                    return Object.defineProperty(
-                        JSON.parse( decode(chunkData) ), "byteLength", {
-                            value : chunkData.byteLength + 8
+                    return Object.defineProperties(
+                        JSON.parse( decode(chunkData) ), {
+                            byteLength : { value : chunkData.byteLength + 8 },
+                            source : { value : chunkData.buffer },
                         }
                     ); 
                 break;
@@ -690,6 +692,7 @@
 
                                     const points_length = decoded_draco.num_points();
 
+                                    let blen = face_values.byteLength;
                                     let alen = decoded_draco.num_attributes();
                                     const attributes = new Array(alen);
                                     while (alen--) {
@@ -722,6 +725,7 @@
                                             case decoderModule.DT_UINT64   : attributes[alen] = new BigUint64Array(data_size); break;          
                                         }
 
+                                        blen += attributes[alen].byteLength; 
                                         for (let i = 0; i < data_size; ++i) {
                                             attributes[alen][i] = data_temp.GetValue(i);
                                         }
@@ -744,6 +748,15 @@
                                     decoderModule.destroy(decoded_draco);
                                     decoderModule.destroy(decoder);
                                     decoderModule = null;
+
+                                    console.log("DRACO Decode Analizi:");
+                                    console.log("- Toplam decode boyutu:", blen, "bytes");
+                                    console.log("- Face count:", face_length);
+                                    console.log("- Point count:", points_length);
+                                    console.log("- Attribute detayları:");
+                                    attributes.forEach((attr, i) => {
+                                        console.log(`  [${i}] Type: ${attr.attribute_type}, Components: ${attr.num_components}, Size: ${attr.byteLength} bytes, DataType: ${attr.data_type}`);
+                                    });
 
                                     return {
                                         faces : {
@@ -769,13 +782,11 @@
                                     decoderModule.destroy(decoder);
                                     decoderModule = null;
 
-                                    return {
-
-                                    }
+                                    return {}
                                 break;
                             }
                         });
-                    } else { throw "BIN_TYPE_UNKNOWN" };
+                    } else { console.error( "BIN_TYPE_UNKNOWN") };
                 break;
 
                 default: throw "CHUNK_TYPE_UNKNOWN:"; break;
@@ -808,15 +819,433 @@
         return headers;
     }
 
-    const gltf = await readAsGltf(buffer);
     
-    // GLTF ile DRACO verisini ilişkilendir ve çiz
-    function renderGltf(gltf) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 800; canvas.height = 600;
-        document.body.appendChild(canvas);
+    // BufferView sistemini anla
+    function analyzeBufferViews(gltf) {
+        console.log('\n=== BUFFERVIEW ANALİZİ ===');
         
-        const gl = canvas.getContext('webgl');
+        gltf.bufferViews?.forEach((bufferView, i) => {
+            console.log(`\nBufferView[${i}]:`, {
+                buffer: gltf.source,
+                byteOffset: bufferView.byteOffset,
+                byteLength: bufferView.byteLength,
+                byteStride: bufferView.byteStride,
+                target: bufferView.target
+            });
+            
+            // Ham BIN verisini al (kaynak buffer kullan)
+            const rawBuffer = gltf.source; // Sen eklediğin kaynak ArrayBuffer
+            
+            if (rawBuffer instanceof ArrayBuffer) {
+                // BufferView ile işaret edilen veriyi çıkar
+                const slice = rawBuffer.slice(
+                    bufferView.byteOffset, 
+                    bufferView.byteOffset + bufferView.byteLength
+                );
+                
+                console.log(`- Ham veri boyutu: ${slice.byteLength} bytes`);
+                console.log(`- İlk 16 byte (hex):`, new Uint8Array(slice, 0, Math.min(16, slice.byteLength)));
+                
+                // DRACO mu kontrol et
+                const isDraco = new TextDecoder().decode(slice.slice(0, 5)) === 'DRACO';
+                console.log(`- DRACO sıkıştırılmış: ${isDraco}`);
+                
+                if (!isDraco) {
+                    // Normal veri - accessor'larla test et
+                    console.log('- Normal vertex verisi tespit edildi');
+                }
+            }
+        });
+        
+        // Accessor'ları analiz et
+        console.log('\n=== ACCESSOR ANALİZİ ===');
+        gltf.accessors?.forEach((accessor, i) => {
+            console.log(`\nAccessor[${i}]:`, {
+                bufferView: accessor.bufferView,
+                byteOffset: accessor.byteOffset || 0,
+                componentType: accessor.componentType,
+                count: accessor.count,
+                type: accessor.type
+            });
+            
+            if (accessor.bufferView !== undefined) {
+                const bufferView = gltf.bufferViews[accessor.bufferView];
+                const rawBuffer = gltf.source; // Kaynak ArrayBuffer
+                
+                if (rawBuffer instanceof ArrayBuffer) {
+                    // Accessor'ın işaret ettiği veriyi çıkar
+                    const totalOffset = bufferView.byteOffset + (accessor.byteOffset || 0);
+                    const componentSize = getComponentSize(accessor.componentType);
+                    const elementSize = getElementSize(accessor.type) * componentSize;
+                    const totalBytes = accessor.count * elementSize;
+                    
+                    const slice = rawBuffer.slice(totalOffset, totalOffset + totalBytes);
+                    const typedArray = createTypedArray(accessor.componentType, slice);
+                    
+                    console.log(`- Veri tipi: ${getTypeName(accessor.componentType)}`);
+                    console.log(`- Element boyutu: ${elementSize} bytes`);
+                    console.log(`- Toplam boyut: ${totalBytes} bytes`);
+                    console.log(`- İlk 5 değer:`, Array.from(typedArray.slice(0, 5)));
+                    
+                    // Senin formülün ile direkt oluştur
+                    const directArray = new Float32Array(
+                        rawBuffer, 
+                        bufferView.byteOffset + (accessor.byteOffset || 0),
+                        totalBytes/4
+                    );
+                    console.log(`- Direkt formül ile ilk 5:`, directArray.slice(0,10).slice());
+                }
+            }
+        });
+    }
+    
+    function getComponentSize(componentType) {
+        switch(componentType) {
+            case 5120: return 1; // BYTE
+            case 5121: return 1; // UNSIGNED_BYTE
+            case 5122: return 2; // SHORT
+            case 5123: return 2; // UNSIGNED_SHORT
+            case 5125: return 4; // UNSIGNED_INT
+            case 5126: return 4; // FLOAT
+            default: return 4;
+        }
+    }
+    
+    function getElementSize(type) {
+        switch(type) {
+            case 'SCALAR': return 1;
+            case 'VEC2': return 2;
+            case 'VEC3': return 3;
+            case 'VEC4': return 4;
+            case 'MAT2': return 4;
+            case 'MAT3': return 9;
+            case 'MAT4': return 16;
+            default: return 1;
+        }
+    }
+    
+    function getTypeName(componentType) {
+        switch(componentType) {
+            case 5120: return 'BYTE';
+            case 5121: return 'UNSIGNED_BYTE';
+            case 5122: return 'SHORT';
+            case 5123: return 'UNSIGNED_SHORT';
+            case 5125: return 'UNSIGNED_INT';
+            case 5126: return 'FLOAT';
+            default: return 'UNKNOWN';
+        }
+    }
+    
+    function createTypedArray(componentType, buffer) {
+        switch(componentType) {
+            case 5120: return new Int8Array(buffer);
+            case 5121: return new Uint8Array(buffer);
+            case 5122: return new Int16Array(buffer);
+            case 5123: return new Uint16Array(buffer);
+            case 5125: return new Uint32Array(buffer);
+            case 5126: return new Float32Array(buffer);
+            default: return new Uint8Array(buffer);
+        }
+    }
+    
+    const gltf = await readAsGltf(buffer);
+
+    // Ham buffer'ı sakla
+    gltf.buffers?.forEach(buffer => {
+        if (buffer.data && !buffer.originalBuffer) {
+            // DRACO decode edilmiş veri varsa, orijinal ham veriyi bul
+            // Bu durumda BIN chunk'ından ham veriyi almalıyız
+        }
+    });
+    
+
+    analyzeBufferViews(gltf);
+    analyzeGltfReferences(gltf);
+    analyzeDracoAccessors(gltf);
+    showAccessorHierarchy(gltf);
+    
+    // Accessor'ların GLTF hiyerarşisindeki ilişkileri
+    function showAccessorHierarchy(gltf) {
+        console.log('\n=== ACCESSOR HİYERARŞİSİ ===');
+        
+        // 1. Scene -> Node -> Mesh ilişkisi
+        gltf.scenes?.forEach((scene, si) => {
+            console.log(`\nScene[${si}]:`);
+            scene.nodes?.forEach(nodeIndex => {
+                const node = gltf.nodes[nodeIndex];
+                console.log(`  Node[${nodeIndex}]: ${node.name || 'unnamed'}`);
+                
+                if (node.mesh !== undefined) {
+                    const mesh = gltf.meshes[node.mesh];
+                    console.log(`    Mesh[${node.mesh}]: ${mesh.name || 'unnamed'}`);
+                    
+                    mesh.primitives?.forEach((primitive, pi) => {
+                        console.log(`      Primitive[${pi}]:`);
+                        
+                        // Material ilişkisi
+                        if (primitive.material !== undefined) {
+                            const material = gltf.materials[primitive.material];
+                            console.log(`        Material[${primitive.material}]: ${material.name || 'unnamed'}`);
+                        }
+                        
+                        // Vertex Attributes -> Accessor ilişkisi
+                        Object.keys(primitive.attributes || {}).forEach(attrName => {
+                            const accessorIndex = primitive.attributes[attrName];
+                            const accessor = gltf.accessors[accessorIndex];
+                            console.log(`        ${attrName}: Accessor[${accessorIndex}] (${accessor.count} ${accessor.type})`);
+                        });
+                        
+                        // Index -> Accessor ilişkisi
+                        if (primitive.indices !== undefined) {
+                            const accessor = gltf.accessors[primitive.indices];
+                            console.log(`        INDICES: Accessor[${primitive.indices}] (${accessor.count} indices)`);
+                        }
+                    });
+                }
+                
+                // Skin ilişkisi
+                if (node.skin !== undefined) {
+                    const skin = gltf.skins[node.skin];
+                    console.log(`    Skin[${node.skin}]: ${skin.name || 'unnamed'}`);
+                    if (skin.inverseBindMatrices !== undefined) {
+                        console.log(`      InverseBindMatrices: Accessor[${skin.inverseBindMatrices}]`);
+                    }
+                }
+            });
+        });
+        
+        // 2. Animation -> Accessor ilişkisi
+        gltf.animations?.forEach((animation, ai) => {
+            console.log(`\nAnimation[${ai}]: ${animation.name || 'unnamed'}`);
+            animation.channels?.forEach((channel, ci) => {
+                const sampler = animation.samplers[channel.sampler];
+                const inputAccessor = gltf.accessors[sampler.input];
+                const outputAccessor = gltf.accessors[sampler.output];
+                
+                console.log(`  Channel[${ci}]: ${channel.target.path}`);
+                console.log(`    Target: Node[${channel.target.node}]`);
+                console.log(`    Input: Accessor[${sampler.input}] (${inputAccessor.count} keyframes)`);
+                console.log(`    Output: Accessor[${sampler.output}] (${outputAccessor.count} values)`);
+            });
+        });
+        
+        // 3. Material -> Texture -> Image ilişkisi
+        gltf.materials?.forEach((material, mi) => {
+            console.log(`\nMaterial[${mi}]: ${material.name || 'unnamed'}`);
+            
+            // PBR textures
+            const pbr = material.pbrMetallicRoughness;
+            if (pbr?.baseColorTexture) {
+                const texture = gltf.textures[pbr.baseColorTexture.index];
+                const image = gltf.images[texture.source];
+                console.log(`  BaseColorTexture: Texture[${pbr.baseColorTexture.index}] -> Image[${texture.source}]`);
+                if (image.bufferView !== undefined) {
+                    console.log(`    Image BufferView[${image.bufferView}] (${image.mimeType})`);
+                }
+            }
+        });
+        
+        // 4. Kullanılmayan Accessor'lar
+        const usedAccessors = new Set();
+        
+        // Mesh'lerden kullanılanlar
+        gltf.meshes?.forEach(mesh => {
+            mesh.primitives?.forEach(primitive => {
+                Object.values(primitive.attributes || {}).forEach(ai => usedAccessors.add(ai));
+                if (primitive.indices !== undefined) usedAccessors.add(primitive.indices);
+            });
+        });
+        
+        // Animation'lardan kullanılanlar
+        gltf.animations?.forEach(animation => {
+            animation.samplers?.forEach(sampler => {
+                usedAccessors.add(sampler.input);
+                usedAccessors.add(sampler.output);
+            });
+        });
+        
+        // Skin'lerden kullanılanlar
+        gltf.skins?.forEach(skin => {
+            if (skin.inverseBindMatrices !== undefined) {
+                usedAccessors.add(skin.inverseBindMatrices);
+            }
+        });
+        
+        console.log(`\nAccessor Kullanım İstatistikleri:`);
+        console.log(`- Toplam Accessor: ${gltf.accessors?.length || 0}`);
+        console.log(`- Kullanılan: ${usedAccessors.size}`);
+        console.log(`- Kullanılmayan: ${(gltf.accessors?.length || 0) - usedAccessors.size}`);
+    }
+    
+    // DRACO durumunda Accessor'ların kullanımı
+    function analyzeDracoAccessors(gltf) {
+        console.log('\n=== DRACO ACCESSOR KULLANIMI ===');
+        
+        gltf.meshes?.forEach((mesh, mi) => {
+            mesh.primitives?.forEach((primitive, pi) => {
+                const dracoExt = primitive.extensions?.KHR_draco_mesh_compression;
+                if (!dracoExt) return;
+                
+                console.log(`\nMesh[${mi}].Primitive[${pi}] - DRACO Encoded:`);
+                
+                // DRACO decode edilmiş veri
+                const dracoData = gltf.buffers[0].data;
+                
+                // Her attribute için Accessor vs DRACO karşılaştır
+                Object.keys(primitive.attributes).forEach(attrName => {
+                    const accessorIndex = primitive.attributes[attrName];
+                    const accessor = gltf.accessors[accessorIndex];
+                    const dracoId = dracoExt.attributes[attrName];
+                    const dracoAttr = dracoData.attributes.find(attr => attr.unique_id === dracoId);
+                    
+                    console.log(`\n${attrName}:`);
+                    console.log(`- Accessor[${accessorIndex}]:`, {
+                        count: accessor.count,
+                        type: accessor.type,
+                        componentType: accessor.componentType,
+                        min: accessor.min,
+                        max: accessor.max
+                    });
+                    
+                    if (dracoAttr) {
+                        console.log(`- DRACO Attribute[${dracoId}]:`, {
+                            count: dracoAttr.length / dracoAttr.num_components,
+                            components: dracoAttr.num_components,
+                            dataType: dracoAttr.data_type
+                        });
+                        
+                        // Accessor bilgileri DRACO decode sonrası için geçerli mi?
+                        const expectedCount = dracoAttr.length / dracoAttr.num_components;
+                        const countsMatch = accessor.count === expectedCount;
+                        const componentsMatch = getElementSize(accessor.type) === dracoAttr.num_components;
+                        
+                        console.log(`- Uyumluluk:`, {
+                            countMatch: countsMatch,
+                            componentMatch: componentsMatch,
+                            accessorCount: accessor.count,
+                            dracoCount: expectedCount
+                        });
+                        
+                        // Min/Max değerleri kontrol et
+                        if (accessor.min && accessor.max) {
+                            const dracoMin = [];
+                            const dracoMax = [];
+                            
+                            for (let c = 0; c < dracoAttr.num_components; c++) {
+                                let min = Infinity, max = -Infinity;
+                                for (let i = c; i < dracoAttr.length; i += dracoAttr.num_components) {
+                                    const val = dracoAttr[i];
+                                    if (val < min) min = val;
+                                    if (val > max) max = val;
+                                }
+                                dracoMin.push(min);
+                                dracoMax.push(max);
+                            }
+                            
+                            console.log(`- Min/Max karşılaştırma:`);
+                            console.log(`  Accessor min:`, accessor.min);
+                            console.log(`  DRACO min:`, dracoMin);
+                            console.log(`  Accessor max:`, accessor.max);
+                            console.log(`  DRACO max:`, dracoMax);
+                        }
+                    }
+                });
+                
+                // Index accessor kontrolü
+                if (primitive.indices !== undefined) {
+                    const indexAccessor = gltf.accessors[primitive.indices];
+                    console.log(`\nINDICES:`);
+                    console.log(`- Accessor[${primitive.indices}]:`, {
+                        count: indexAccessor.count,
+                        type: indexAccessor.type,
+                        componentType: indexAccessor.componentType
+                    });
+                    console.log(`- DRACO Faces:`, {
+                        count: dracoData.faces.length * 3,
+                        type: 'SCALAR',
+                        componentType: 'UNSIGNED_INT'
+                    });
+                    
+                    const indicesMatch = indexAccessor.count === dracoData.faces.length * 3;
+                    console.log(`- Index count match:`, indicesMatch);
+                }
+            });
+        });
+    }
+    
+    // GLTF sistemindeki tüm BufferView referanslarını bul
+    function analyzeGltfReferences(gltf) {
+        console.log('\n=== GLTF BUFFERVIEW REFERANSLARI ===');
+        
+        // 1. Primitive Attributes (Mesh verisi)
+        gltf.meshes?.forEach((mesh, mi) => {
+            mesh.primitives?.forEach((primitive, pi) => {
+                console.log(`\nMesh[${mi}].Primitive[${pi}]:`);
+                
+                // Vertex attributes
+                Object.keys(primitive.attributes || {}).forEach(attrName => {
+                    const accessorIndex = primitive.attributes[attrName];
+                    const accessor = gltf.accessors[accessorIndex];
+                    console.log(`- ${attrName}: Accessor[${accessorIndex}] -> BufferView[${accessor.bufferView}]`);
+                });
+                
+                // Index buffer
+                if (primitive.indices !== undefined) {
+                    const accessor = gltf.accessors[primitive.indices];
+                    console.log(`- INDICES: Accessor[${primitive.indices}] -> BufferView[${accessor.bufferView}]`);
+                }
+                
+                // DRACO extension
+                const dracoExt = primitive.extensions?.KHR_draco_mesh_compression;
+                if (dracoExt) {
+                    console.log(`- DRACO: BufferView[${dracoExt.bufferView}] (sıkıştırılmış)`);
+                }
+            });
+        });
+        
+        // 2. Animation verisi
+        gltf.animations?.forEach((animation, ai) => {
+            console.log(`\nAnimation[${ai}]:`);
+            animation.samplers?.forEach((sampler, si) => {
+                const inputAccessor = gltf.accessors[sampler.input];
+                const outputAccessor = gltf.accessors[sampler.output];
+                console.log(`- Sampler[${si}]: Input BufferView[${inputAccessor.bufferView}], Output BufferView[${outputAccessor.bufferView}]`);
+            });
+        });
+        
+        // 3. Skin verisi (Skeletal animation)
+        gltf.skins?.forEach((skin, si) => {
+            console.log(`\nSkin[${si}]:`);
+            if (skin.inverseBindMatrices !== undefined) {
+                const accessor = gltf.accessors[skin.inverseBindMatrices];
+                console.log(`- InverseBindMatrices: BufferView[${accessor.bufferView}]`);
+            }
+        });
+        
+        // 4. Morph Target verisi
+        gltf.meshes?.forEach((mesh, mi) => {
+            mesh.primitives?.forEach((primitive, pi) => {
+                primitive.targets?.forEach((target, ti) => {
+                    console.log(`\nMesh[${mi}].Primitive[${pi}].Target[${ti}]:`);
+                    Object.keys(target).forEach(attrName => {
+                        const accessorIndex = target[attrName];
+                        const accessor = gltf.accessors[accessorIndex];
+                        console.log(`- ${attrName}: BufferView[${accessor.bufferView}]`);
+                    });
+                });
+            });
+        });
+        
+        // 5. Image verisi (Texture)
+        gltf.images?.forEach((image, ii) => {
+            if (image.bufferView !== undefined) {
+                console.log(`\nImage[${ii}]: BufferView[${image.bufferView}] (texture data)`);
+            }
+        });
+    }
+    
+    function renderGltf(gltf) {
+        const gl = context;
         
         // Basit vertex shader
         const vsSource = `
@@ -847,24 +1276,68 @@
         gl.useProgram(program);
         
         // Her mesh için
+        let ii = 0;
         gltf.meshes?.forEach(mesh => {
             mesh.primitives?.forEach(primitive => {
+                if (ii++ > 0) {
+                    return
+                }
                 const dracoExt = primitive.extensions?.KHR_draco_mesh_compression;
+
                 if (dracoExt) {
-                    const bufferView = gltf.bufferViews[dracoExt.bufferView];
-                    const dracoData = gltf.buffers[bufferView.buffer].data;
+                    // DRACO decode edilmiş veriyi al
+                    const dracoData = gltf.buffers[0].data;
                     
-                    // DRACO attribute mapping
-                    const positionAttr = dracoData.attributes.find(attr => 
-                        attr.attribute_type === 0 // POSITION
-                    );
+                    console.log('\n=== GLTF vs DRACO Karşılaştırma ===');
+                    console.log('Primitive attributes:', primitive.attributes);
+                    console.log('DRACO extension attributes:', dracoExt.attributes);
+                    
+                    // BufferView boyutlarını kontrol et
+                    const bufferView = gltf.bufferViews[dracoExt.bufferView];
+                    console.log('BufferView bilgileri:');
+                    console.log('- byteOffset:', bufferView.byteOffset);
+                    console.log('- byteLength:', bufferView.byteLength, 'bytes (sıkıştırılmamış)');
+                    
+                    console.log('DRACO decode bilgileri:');
+                    console.log('- Attribute count:', dracoData.attributes.length);
+                    console.log('- Toplam decode boyutu:', dracoData.attributes.reduce((sum, attr) => sum + attr.byteLength, 0) + dracoData.faces.values.byteLength, 'bytes');
+                    
+                    // Accessor bilgilerini kontrol et
+                    Object.keys(primitive.attributes).forEach(attrName => {
+                        const accessorIndex = primitive.attributes[attrName];
+                        const accessor = gltf.accessors[accessorIndex];
+                        console.log(`${attrName} accessor:`, {
+                            count: accessor.count,
+                            type: accessor.type,
+                            componentType: accessor.componentType,
+                            byteOffset: accessor.byteOffset
+                        });
+                    });
+                    
+                    // Her GLTF primitive attribute için DRACO karşılığını bul
+                    const attributeMap = {};
+                    
+                    Object.keys(primitive.attributes).forEach(attrName => {
+                        if (dracoExt.attributes[attrName] !== undefined) {
+                            const dracoId = dracoExt.attributes[attrName];
+                            const dracoAttr = dracoData.attributes.find(attr => 
+                                attr.unique_id === dracoId
+                            );
+                            if (dracoAttr) {
+                                attributeMap[attrName] = dracoAttr;
+                                console.log(`${attrName}: unique_id=${dracoId}, components=${dracoAttr.num_components}`);
+                            }
+                        }
+                    });
+                    
+                    const positionAttr = attributeMap.POSITION;
                     
                     if (positionAttr) {
                         // Position buffer oluştur
                         const posBuffer = gl.createBuffer();
                         gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
                         gl.bufferData(gl.ARRAY_BUFFER, positionAttr, gl.STATIC_DRAW);
-                        
+
                         // Index buffer oluştur
                         const indexBuffer = gl.createBuffer();
                         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
@@ -880,16 +1353,13 @@
                             1, 0, 0, 0,
                             0, 1, 0, 0,
                             0, 0, 1, 0,
-                            0, 0, -5, 1
+                            0,-1, 0, 2
                         ]);
                         
                         const matrixLocation = gl.getUniformLocation(program, 'uMatrix');
                         gl.uniformMatrix4fv(matrixLocation, false, matrix);
                         
                         // Çiz
-                        gl.enable(gl.DEPTH_TEST);
-                        gl.clearColor(0.1, 0.1, 0.1, 1.0);
-                        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
                         gl.drawElements(gl.TRIANGLES, dracoData.faces.length * 3, gl.UNSIGNED_INT, 0);
                     }
                 }
@@ -898,7 +1368,6 @@
     }
     
     renderGltf(gltf);
-    console.log(gltf)
-    
+    console.log(gltf)    
 </script>
 </html>
