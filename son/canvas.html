@@ -101,6 +101,16 @@
     const TAGGED_RANS_PRECISION                                = 4096;
     const TAGGED_SYMBOLS                                       = 0;
     const RAW_SYMBOLS                                          = 1;
+    const ITEMS_PER_GLTYPE = {
+        SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, 
+        MAT4: 16, MAT3: 9, MAT2: 4
+    };
+    const VIEWS_FOR_GLCOMPONENTTYPE = {
+        [ WebGL2RenderingContext.FLOAT ] : Float32Array,
+        [ WebGL2RenderingContext.UNSIGNED_BYTE ] : Uint8Array,
+        [ WebGL2RenderingContext.UNSIGNED_INT ] : Uint8Array,
+        [ WebGL2RenderingContext.UNSIGNED_SHORT ] : Uint16Array,
+    };
 
     function toRadians (angleInDegrees) {
         return angleInDegrees * 0.017453292519943295;  // Math.PI / 180
@@ -647,16 +657,107 @@
             const chunkData = new Uint8Array( 
                 source, offset, Math.min(chunkLength, length || chunkLength) 
             );
-            console.log({offset, length, chunkType}, headers, new Uint8Array(source, offset-8).slice())
+            // console.log({offset, length, chunkType}, headers, new Uint8Array(source, offset-8).slice())
             
             switch ( chunkType ) {
                 case CHUNK_TYPE_JSON:
-                    return Object.defineProperties(
+                    result = Object.defineProperties(
                         JSON.parse( decode(chunkData) ), {
                             byteLength : { value : chunkData.byteLength + 8 },
                             source : { value : chunkData.buffer },
                         }
                     ); 
+                    
+                    let byteOffset = 
+                        chunkData.byteOffset + 
+                        chunkData.byteLength
+                    ;
+
+                    result.buffers.forEach(buffer => {
+                        buffer.byteOffset = byteOffset + 8;
+                        byteOffset = buffer.byteOffset + buffer.byteLength;
+                    });
+
+                    result.accessors.forEach(accessor => {
+
+                        const ITEMS_PER_ELEMENT = ITEMS_PER_GLTYPE[accessor.type];
+                        const ComponentTypedArray = VIEWS_FOR_GLCOMPONENTTYPE[accessor.componentType];
+                        
+                        if (accessor.bufferView > -1) {
+                            const accessorBufferView = result.bufferViews[ 
+                                accessor.bufferView 
+                            ];
+                                
+                            const CHUNK_BYTEOFFSET = result.buffers[
+                                accessorBufferView.buffer
+                            ].byteOffset;
+                            
+                            accessor.componentViewArray = 
+                            result.bufferViews[ accessor.bufferView ].bufferViewArray =
+                            Reflect.construct(
+                                ComponentTypedArray, [
+                                    source,
+                                    accessorBufferView.byteOffset + CHUNK_BYTEOFFSET,
+                                    accessor.count * ITEMS_PER_ELEMENT
+                                ]
+                            );
+                        }
+                        else {
+                            accessor.emptyComponentViewArray = Reflect.construct(
+                                ComponentTypedArray, [
+                                    accessor.count * ITEMS_PER_ELEMENT
+                                ]
+                            );
+                        }
+                    });
+
+                    result.bufferViews
+                        .filter(bv => !bv.bufferViewArray)
+                        .forEach(bufferView => {
+                            const CHUNK_BYTEOFFSET = result.buffers[
+                                bufferView.buffer
+                            ].byteOffset;
+
+                            if (bufferView.byteLength % 2) {
+                                bufferView.bufferViewArray = new Uint8Array(
+                                    source,
+                                    CHUNK_BYTEOFFSET + bufferView.byteOffset,
+                                    bufferView.byteLength / Uint8Array.BYTES_PER_ELEMENT
+                                );
+                            }
+                            else 
+                            if (bufferView.byteLength % 4) {
+                                bufferView.predictedBufferViewArray = new Uint16Array(
+                                    source,
+                                    CHUNK_BYTEOFFSET + bufferView.byteOffset,
+                                    bufferView.byteLength / Uint16Array.BYTES_PER_ELEMENT
+                                );
+                            }
+                            else 
+                            {
+                                bufferView.predictedBufferViewArray = new Float32Array(
+                                    source,
+                                    CHUNK_BYTEOFFSET + bufferView.byteOffset,
+                                    bufferView.byteLength / Float32Array.BYTES_PER_ELEMENT
+                                );
+
+                                if (
+                                    Array
+                                        .from(bufferView.predictedBufferViewArray.subarray(0,12))
+                                        .map(String)
+                                        .filter(s => !s.includes("."))
+                                        .find(s => s.length > 10)
+                                ) {
+                                    bufferView.predictedBufferViewArray = new Uint32Array(
+                                        bufferView.predictedBufferViewArray.buffer,
+                                        bufferView.predictedBufferViewArray.byteOffset,
+                                        bufferView.predictedBufferViewArray.length
+                                    );
+                                }
+                            }
+                        })
+
+                    return result;
                 break;
 
                 case CHUNK_TYPE_BIN:
@@ -666,122 +767,137 @@
                         return await DracoDecoderModule().then(async decoderModule => {
                             
                             const decoder = new decoderModule.Decoder();
-                            let decoded_draco = null;
+                            const attribs = [
+                                { name: "POSITION", id: decoderModule.POSITION },
+                                { name: "GENERIC", id: decoderModule.GENERIC },
+                                { name: "COLOR", id: decoderModule.COLOR },
+                                { name: "NORMAL", id: decoderModule.NORMAL },
+                                { name: "TEX_COORD", id: decoderModule.TEX_COORD },                                
+                            ];
+
+                            const dtypes = [
+                                { name: "DT_FLOAT32", data_type: decoderModule.DT_FLOAT32, array_type: "Float32", prefix: "Float", BYTES_PER_ELEMENT: 4 },
+                                { name: "DT_UINT32", data_type: decoderModule.DT_UINT32, array_type: "UInt32", prefix: "UInt32", BYTES_PER_ELEMENT: 4 },
+                                { name: "DT_UINT16", data_type: decoderModule.DT_UINT16, array_type: "UInt16", prefix: "UInt16", BYTES_PER_ELEMENT: 2 },
+                                { name: "DT_UINT8", data_type: decoderModule.DT_UINT8, array_type: "UInt8", prefix: "UInt8", BYTES_PER_ELEMENT: 1 },
+                                { name: "DT_BOOL", data_type: decoderModule.DT_BOOL, array_type: "UInt8", prefix: "UInt8", BYTES_PER_ELEMENT: 1 },
+                                { name: "DT_INT8", data_type: decoderModule.DT_INT8, array_type: "Int8", prefix: "Int8", BYTES_PER_ELEMENT: 1 },
+                                { name: "DT_INT16", data_type: decoderModule.DT_INT16, array_type: "Int16", prefix: "Int16", BYTES_PER_ELEMENT: 2 },
+                                { name: "DT_INT32", data_type: decoderModule.DT_INT32, array_type: "Int32", prefix: "Int32", BYTES_PER_ELEMENT: 4 },
+                                { name: "DT_FLOAT64", data_type: decoderModule.DT_FLOAT64, array_type: "Float64", prefix: "Float", BYTES_PER_ELEMENT: 8 },
+                            ];
+                            
+                            let type,
+                                vals,
+                                mesh,
+                                attr = new Object(), 
+                                data = new Object(), 
+                                dbuf = new decoderModule.DracoUInt32Array()
+                            ;
                             
                             switch (decoder.GetEncodedGeometryType(chunkData)) 
                             {
                                 case decoderModule.TRIANGULAR_MESH:
-                                    decoded_draco = new decoderModule.Mesh();
-                                    decoder.DecodeArrayToMesh( chunkData, chunkData.length, decoded_draco );
-
-                                    const dmf32_array = new decoderModule.DracoInt32Array();
-                                    const face_length = decoded_draco.num_faces();
-                                    const face_values = new Int32Array( face_length * 3 );
-
-                                    for (let i = 0; i < face_length; ++i) {
-                                        decoder.GetFaceFromMesh(decoded_draco, i, dmf32_array);
-
-                                        face_values.set([ 
-                                            dmf32_array.GetValue(0), 
-                                            dmf32_array.GetValue(1), 
-                                            dmf32_array.GetValue(2) 
-                                        ], i * 3);                                         
-                                    }
                                     
-                                    decoderModule.destroy(dmf32_array);
+                                    decoder.DecodeArrayToMesh( 
+                                        chunkData, 
+                                        chunkData.byteLength, 
+                                        mesh = new decoderModule.Mesh()
+                                    );
 
-                                    const points_length = decoded_draco.num_points();
+                                    data.num_faces = mesh.num_faces();
+                                    data.num_points = mesh.num_points();
+                                    data.num_attributes = mesh.num_attributes();
 
-                                    let blen = face_values.byteLength;
-                                    let alen = decoded_draco.num_attributes();
-                                    const attributes = new Array(alen);
-                                    while (alen--) {
-                                        const attribute = decoder.GetAttribute(decoded_draco, alen);
-                                        
-                                        if (attribute.unique_id() < 0) {
-                                            return console.error("attr(?)", alen);
+                                    data.indexes = new Array();
+                                    data.attributes = new Array();
+
+                                    data.length_attributes = 0;
+                                    data.length_bytes = 0;
+
+                                    for (let i = 0; i < data.num_faces; ++i) {
+                                        decoder.GetFaceFromMesh(mesh, i, dbuf);
+                                        const k = i * 3;
+                                        for (let j=0; j<3; j++) {
+                                            data.indexes[k + j] = dbuf.GetValue(j); 
+                                        }
+                                    }
+
+                                    for (const {name, id} of attribs) {
+                                        attr = decoder.GetAttribute(mesh, id);
+                                        vals = new Array();
+
+                                        Reflect.defineProperty( vals, "id",             { value: id });
+                                        Reflect.defineProperty( vals, "name",           { value: name });
+                                        Reflect.defineProperty( vals, "attribute_type", { value: attr.attribute_type() });
+                                        Reflect.defineProperty( vals, "byte_offset",    { value: attr.byte_offset() });
+                                        Reflect.defineProperty( vals, "byte_stride",    { value: attr.byte_stride() });
+                                        Reflect.defineProperty( vals, "data_type",      { value: attr.data_type() });
+                                        Reflect.defineProperty( vals, "normalized",     { value: attr.normalized() });
+                                        Reflect.defineProperty( vals, "num_components", { value: attr.num_components() });
+                                        Reflect.defineProperty( vals, "size",           { value: attr.size() });
+                                        Reflect.defineProperty( vals, "unique_id",      { value: attr.unique_id() });
+
+                                        if (vals.size < 0) { 
+                                            continue; 
                                         }
 
-                                        const data_temp = new decoderModule.DracoFloat32Array();
-                                        
-                                        decoder.GetAttributeFloatForAllPoints(
-                                            decoded_draco, attribute, data_temp
+                                        type = dtypes.find(d => 
+                                            d.data_type === vals.data_type
                                         );
 
-                                        const data_type = attribute.data_type();
-                                        const data_size = data_temp.size();
+                                        if (!type) {
+                                            throw { UNDEFINED_DATA_TYPE: vals }
+                                        }
                                         
-                                        switch (data_type) {
-                                            case decoderModule.DT_BOOL     : attributes[alen] = new Uint8Array(data_size); break;      
-                                            case decoderModule.DT_FLOAT32  : attributes[alen] = new Float32Array(data_size); break;          
-                                            case decoderModule.DT_FLOAT64  : attributes[alen] = new Float64Array(data_size); break;          
-                                            case decoderModule.DT_INT8     : attributes[alen] = new Int8Array(data_size); break;      
-                                            case decoderModule.DT_INT16    : attributes[alen] = new Int16Array(data_size); break;      
-                                            case decoderModule.DT_INT32    : attributes[alen] = new Int32Array(data_size); break;      
-                                            case decoderModule.DT_INT64    : attributes[alen] = new BigInt64Array(data_size); break;      
-                                            case decoderModule.DT_UINT8    : attributes[alen] = new Uint8Array(data_size); break;      
-                                            case decoderModule.DT_UINT16   : attributes[alen] = new Uint16Array(data_size); break;          
-                                            case decoderModule.DT_UINT32   : attributes[alen] = new Uint32Array(data_size); break;          
-                                            case decoderModule.DT_UINT64   : attributes[alen] = new BigUint64Array(data_size); break;          
+                                        Reflect.apply( 
+                                            decoder[ `GetAttribute${type.prefix}ForAllPoints` ], 
+                                            decoder,
+                                            [   mesh, 
+                                                attr, 
+                                                dbuf = Reflect.construct( 
+                                                    decoderModule[
+                                                        `Draco${type.array_type}Array`
+                                                    ], []
+                                                )
+                                            ]
+                                        );
+
+                                        for (let i = 0; i < vals.size; ++i) {
+                                            vals[i] = dbuf.GetValue(i);
                                         }
 
-                                        blen += attributes[alen].byteLength; 
-                                        for (let i = 0; i < data_size; ++i) {
-                                            attributes[alen][i] = data_temp.GetValue(i);
-                                        }
+                                        Reflect.defineProperty(vals, "byte_length", { value: vals.size * type.BYTES_PER_ELEMENT});
+                                        Reflect.defineProperty(vals, "draco_type", { value: type});
 
-                                        Object.defineProperties( attributes[alen], {
-                                                attribute_type: { value: attribute.attribute_type() },
-                                                byte_offset: { value: attribute.byte_offset() },
-                                                byte_stride: { value: attribute.byte_stride() },
-                                                data_type: { value: data_type },
-                                                normalized: { value: attribute.normalized() },
-                                                num_components: { value: attribute.num_components() },
-                                                size: { value: attribute.size() },
-                                                unique_id: { value: attribute.unique_id() },
-                                            }
-                                        )
-
-                                        decoderModule.destroy(data_temp);
+                                        data.attributes.push(vals);
                                     }
 
-                                    decoderModule.destroy(decoded_draco);
+                                    Reflect.defineProperty(data.attributes, "byte_length", { value: data.attributes.map(a => a.byte_length).reduce((a=0,b) => a+b)});
+                                    Reflect.defineProperty(data.attributes, "attribute_length", { value: data.attributes.map(a => a.size).reduce((a=0,b) => a+b)});
+                                                                        
+                                    decoderModule.destroy(dbuf);
+                                    decoderModule.destroy(mesh);
                                     decoderModule.destroy(decoder);
                                     decoderModule = null;
 
-                                    console.log("DRACO Decode Analizi:");
-                                    console.log("- Toplam decode boyutu:", blen, "bytes");
-                                    console.log("- Face count:", face_length);
-                                    console.log("- Point count:", points_length);
-                                    console.log("- Attribute detayları:");
-                                    attributes.forEach((attr, i) => {
-                                        console.log(`  [${i}] Type: ${attr.attribute_type}, Components: ${attr.num_components}, Size: ${attr.byteLength} bytes, DataType: ${attr.data_type}`);
-                                    });
+                                    return data;
 
-                                    return {
-                                        faces : {
-                                            length: face_length,
-                                            values: face_values
-                                        },
-                                        points : {
-                                            length: points_length,
-                                        },
-                                        attributes
-                                    }
                                 break;
                                     
                                 case decoderModule.POINT_CLOUD:
-                                    decoded_draco = new decoderModule.PointCloud();
+                                    mesh = new decoderModule.PointCloud();
                                     decoder.DecodeArrayToPointCloud( 
                                         chunkData, 
                                         chunkData.length, 
-                                        decoded_draco 
+                                        mesh 
                                     );
 
-                                    decoderModule.destroy(decoded_draco);
+                                    decoderModule.destroy(mesh);
                                     decoderModule.destroy(decoder);
                                     decoderModule = null;
 
+                                    throw "PC";
                                     return {}
                                 break;
                             }
@@ -959,10 +1075,10 @@
     });
     
 
-    analyzeBufferViews(gltf);
-    analyzeGltfReferences(gltf);
-    analyzeDracoAccessors(gltf);
-    showAccessorHierarchy(gltf);
+    // analyzeBufferViews(gltf);
+    // analyzeGltfReferences(gltf);
+    // analyzeDracoAccessors(gltf);
+    // showAccessorHierarchy(gltf);
     
     // Accessor'ların GLTF hiyerarşisindeki ilişkileri
     function showAccessorHierarchy(gltf) {
@@ -1274,7 +1390,175 @@
         gl.attachShader(program, createShader(gl, gl.FRAGMENT_SHADER, fsSource));
         gl.linkProgram(program);
         gl.useProgram(program);
+
+
+        const scenes = gltf.scenes;
+        scenes.forEach((scene, scene_index) => {
+            const { 
+                extras,                                     // { ... } 
+                name: scene_name,                           // Scene
+                nodes                                       // [ 26 ]
+            } = scene;
+
+            console.log(`gltf.scenes[${scene_index}]:\n`, scene);
+
+            if ( "glTF2ExportSettings" in extras ) {
+                const {
+                    export_copyright,                       // npc_d
+                    export_draco_mesh_compression_enable,   // 1
+                    export_extras,                          // 1
+                    export_image_format                     // JPEG
+                } = extras.glTF2ExportSettings;
+            }
+
+            const default_node = {
+                camera      : -1,
+                children    : [],
+                skin        : -1,
+                matrix      : Float32Array.of(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1),
+                mesh        : -1,
+                rotation    : Float32Array.of(0,0,0,1),
+                scale       : Float32Array.of(1,1,1),
+                translation : Float32Array.of(0,0,0),
+                weights     : [],
+                name        : "",
+                extensions  : {},
+                extras      : {}
+            };
+
+            const default_mesh = {
+                primitives  : [],
+                weights     : [],
+                name        : "",
+                extensions  : {},
+                extras      : {}
+            };
+
+            const default_primitive = {
+                attributes  : {},
+                indices     : -1,
+                material    : -1,
+                mode        : 4,
+                targets     : [],
+                extensions  : {},
+                extras      : {}
+            };
+
+            const default_accessor = {
+                bufferView      : -1,
+                byteOffset      : -1,
+                componentType   : undefined,
+                normalized      : false,
+                count           : undefined,
+                type            : undefined,
+                max             : 16,
+                min             : 1,
+                sparse          : {},
+                name            : "",
+                extensions      : {},
+                extras          : {}
+            };
+
+            const default_bufferView = {
+                buffer          : undefined,
+                byteOffset      : 0,
+                byteLength      : undefined,
+                byteStride      : -1,
+                target          : -1,
+                name            : "",
+                extensions      : {},
+                extras          : {}
+            };
+
+            const nodeAt = n => Object.assign(
+                Object(),
+                default_node,
+                gltf.nodes.at(n)
+            );
+
+            const meshAt = n => Object.assign(
+                Object(),
+                default_mesh,
+                gltf.meshes.at(n)
+            );
+
+            const meshPritimitiveAt = (m, n) => Object.assign(
+                Object(),
+                default_primitive,
+                m.primitives.at(n)
+            );
+
+            const accessorAt = n => Object.assign(
+                Object(),
+                default_accessor,
+                gltf.accessors.at(n)
+            );
+
+            const bufferViewAt = n => Object.assign(
+                Object(),
+                default_bufferView,
+                gltf.bufferViews.at(n)
+            );
+
+            scene.nodes.forEach(node_index => {
+                const node = nodeAt(node_index);
+                console.log(`gltf.scenes[${scene_index}].nodes[${node_index}]:\n`, node)
+
+                node.children.forEach(child_index => {
+                    const child = nodeAt(child_index);
+                    console.log(`gltf.scenes[${scene_index}].nodes[${node_index}].children[${child_index}]:\n`, child)
+
+                    if (child.mesh > -1) {
+                        const mesh = meshAt(child.mesh);
+                        console.log(`gltf.meshes[${child.mesh}]:\n`, mesh);
+
+                        for(const primitive_index in mesh.primitives) 
+                        {
+                            const primitive = meshPritimitiveAt(mesh, primitive_index);
+                            console.log(`gltf.meshes[${child.mesh}].primitives[${primitive_index}]:\n`, primitive);
+
+                            /*
+                            if (primitive.indices > -1) {
+                                const accessor = accessorAt(primitive.indices);
+                                console.log(`gltf.accessors[${primitive.indices}]:\n`, accessor);
+                            }
+                            */
+
+                            for (const extension_name in primitive.extensions) {
+                                const extension = primitive.extensions[extension_name];
+                                console.log(`gltf.meshes[${child.mesh}].primitives[${primitive_index}].extensions['${extension_name}']:\n`, extension);
+
+                                if (extension.bufferView > -1) {                                
+                                    const bufferView = bufferViewAt( extension.bufferView )
+                                    console.log(`gltf.bufferViews[${extension.bufferView}]:\n`, bufferView);
+                                    
+                                    if (primitive.indices > -1) {
+                                        const accessor = accessorAt(primitive.indices);
+                                        console.log(`gltf.accessors[${primitive.indices}]:\n`, accessor);
+
+                                        switch (accessor.componentType) {
+                                            case WebGLRenderingContext.UNSIGNED_SHORT:
+                                                const bufferViewArray = new Uint16Array(
+                                                    gltf.source,
+                                                    gltf.buffers[bufferView.buffer].byteOffset + bufferView.byteOffset,
+                                                    bufferView.byteLength / Uint16Array.BYTES_PER_ELEMENT
+                                                )
+                                                console.warn(bufferViewArray)
+                                            break;
+                                        }
+                                    }
+                                }
+
+                            }
+                        }
+                    }
+                    
+                })
+            })
+
+        })
         
+        return;
         // Her mesh için
         let ii = 0;
         gltf.meshes?.forEach(mesh => {
@@ -1367,7 +1651,7 @@
         });
     }
     
+    console.warn(gltf)    
     renderGltf(gltf);
-    console.log(gltf)    
 </script>
 </html>
